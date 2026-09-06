@@ -6,6 +6,13 @@
   × dismisses forever; one-tap auto-install when the browser offers it, manual
   Android/iPhone guide otherwise.
 - **Buttons moved in/up:** touch ▲▼ + ⚡ sit 26px in and 30px up with notch-safe insets.
+- **LIVE on https:** repo public + GitHub Pages enabled after LAN-http proved uninstallable
+  (secure context is a hard browser rule). Verified live + install prompt fires.
+- **Install banner like a proper app:** top strip (icon + name + Installable App badge +
+  Install App + ×) on phones AND desktop, HUD drops below it; menu button mirrors it;
+  × dismisses forever; one-tap auto-install when the browser offers it, manual
+  Android/iPhone guide otherwise.
+- **Buttons moved in/up:** touch ▲▼ + ⚡ sit 26px in and 30px up with notch-safe insets.
 - Note: auto-install needs https — localhost/LAN http can never prompt (browser rule).
 
 ## v2.0 — The proper-app release (current)

@@ -1,5 +1,7 @@
 # NEMO DASH — Coral Escape 🐠
 
+**▶ Play now: https://sumit-dev06.github.io/Nemo-Dash/** (installable, offline-ready)
+
 A highly addictive 2D underwater dodger, now a **4-fish roster game with a gem economy**.
 You **auto-swim left → right** and steer **only UP / DOWN**. Dodge what you can't eat,
 **eat what you can**, grab pearls, and reach the **Coral Gate 🏁**. Bigger fish, bigger appetite.
