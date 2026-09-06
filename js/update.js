@@ -334,25 +334,30 @@ function update(dt, rawDt) {
     n.sway += dt * 1.4;
     if (n.warn > 0) {
       n.warn -= dt;
-      n.x += Math.sin(time * 3) * 8 * dt;
+      // warning phase: cage hangs, no drift
     } else if (!n.landed) {
+      // straight drop from the top — no horizontal chase, no screen tracking.
+      // tiny sway only so it feels alive, never enough to slide into the fish.
       n.y += n.vy * dt;
-      n.x += Math.sin(n.sway) * 22 * dt - effSpeed * 0.12 * dt;
+      n.x += Math.sin(n.sway) * 6 * dt;
       if (n.y >= FLOOR_Y - n.h) {
         n.y = FLOOR_Y - n.h;
         n.landed = true;
       }
     } else {
+      // landed cage sits on the seabed and scrolls with the world (correct)
       n.x -= effSpeed * 0.85 * dt;
     }
-    // TRAPPED! Touching a live net pins you inside it — you ride the cage down.
-    // The fall is harmless; the landing ends the run (shield still saves once).
-    if (!player.dead && !player.trappedIn && n.warn <= 0 && player.invuln <= 0) {
-      const nx = clamp(px, n.x - n.w / 2, n.x + n.w / 2),
-        ny = clamp(py, n.y, n.y + n.h);
-      const dx = px - nx,
-        dy = py - ny;
-      if (dx * dx + dy * dy < player.r * player.r * 0.7) {
+    // TRAPPED only when the fish centre is TRULY INSIDE the mesh —
+    // brushing past / swimming near it never traps. Simple rule.
+    if (!player.dead && !player.trappedIn && n.warn <= 0 && player.invuln <= 0 && !n.landed) {
+      const m = 12; // inner margin: must be well inside, not on the edge
+      const inside =
+        px > n.x - n.w / 2 + m &&
+        px < n.x + n.w / 2 - m &&
+        py > n.y + m &&
+        py < n.y + n.h - m;
+      if (inside) {
         player.trappedIn = n;
         player.boosting = false;
         player.boostToggle = false;
@@ -373,7 +378,10 @@ function update(dt, rawDt) {
     if (t.landed) {
       player.trappedIn = null;
       if (!useShield()) triggerDeath('net');
-      else player.vy = -260; // shield bursts you free, upward!
+      else {
+        player.x = 170; // shield bursts you free — snap back to swim lane, no left drift
+        player.vy = -260; // shield bursts you free, upward!
+      }
     }
   }
 

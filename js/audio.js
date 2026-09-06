@@ -108,9 +108,34 @@ const AudioSys = {
       } catch (e) {}
     }
   },
+  // stop a named SFX pool immediately (used when a new run starts —
+  // the lose sting must never bleed into the fresh game).
+  stop(name) {
+    try {
+      const pool = this.pools && this.pools[name];
+      if (!pool) return;
+      for (const ch of pool) {
+        try {
+          ch.el.pause();
+          ch.el.currentTime = 0;
+        } catch (e) {}
+      }
+    } catch (e) {}
+  },
+  stopEndStings() {
+    this.stop('lose');
+    this.stop('roar');
+    this.stop('trap');
+    this.stop('hurt');
+    try {
+      if (typeof engulfT !== 'undefined' && engulfT) {
+        clearTimeout(engulfT);
+        engulfT = 0;
+      }
+    } catch (e) {}
+  },
   // play a file; returns false when unavailable (caller falls back to synth)
-  playFile(name, vol = 0.8, cut = 0, rate = 1) {
-    if (!this.ctx || this.muted || !this.pools || !this.pools[name]) return false;
+  playFile(name, vol = 0.8, cut = 0, rate = 1) {    if (!this.ctx || this.muted || !this.pools || !this.pools[name]) return false;
     const pool = this.pools[name];
     const ch = pool.find((c) => c.ok && (c.el.paused || c.el.ended)) || pool.find((c) => c.ok);
     if (!ch) return false;

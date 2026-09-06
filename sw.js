@@ -1,5 +1,5 @@
 /* Nemo Dash service worker — offline-first cache. Bump on release. */
-const CACHE = 'nemo-dash-v2.1';
+const CACHE = 'nemo-dash-v2.4';
 const ASSETS = [
   './',
   './index.html',

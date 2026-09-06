@@ -17,7 +17,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Nemo Dash" />
-    <link rel="stylesheet" href="css/style.css?v=2.1" />
+    <link rel="stylesheet" href="css/style.css?v=2.4" />
   </head>
   <body>
     <div id="wrap">
@@ -29,12 +29,21 @@
           <h2 id="bannerTitle">DIVE IN!</h2>
         </div>
         <div id="errBox"></div>
-        <!-- portrait phones: turn sideways to play -->
+        <div id="installToast" class="hidden"></div>
+        <!-- portrait phones: rotate animation + install (menu stays hidden behind) -->
         <div class="overlay hidden" id="rotate">
-          <div class="card">
-            <div style="font-size: 52px">🔄</div>
-            <h2>Turn your phone sideways</h2>
-            <p>Sideways = big reef, easy buttons.</p>
+          <div class="card rotate-card">
+            <div class="rotate-anim" aria-hidden="true">
+              <div class="phone phone-portrait">📱</div>
+              <div class="rotate-arrow">↻</div>
+              <div class="phone phone-landscape">📱</div>
+            </div>
+            <h2>Rotate your phone to play</h2>
+            <p class="rotate-sub">Sideways = big reef, easy buttons.</p>
+            <div class="row">
+              <button class="btn" id="btnInstallPortrait">⬇ INSTALL APP</button>
+            </div>
+            <p class="rotate-note">No need to play in browser — install it, then open it fullscreen from your home screen.</p>
           </div>
         </div>
         <div id="touchNav">
@@ -82,22 +91,25 @@
 
         <!-- MENU -->
         <div class="overlay" id="menu">
-          <div class="card wide">
-            <img src="assets/logo.svg" class="gamelogo" alt="Nemo Dash — Coral Escape" />
-            <div id="gemBar">💎 <span id="menuGems">0</span></div>
-            <p id="menuBest">⭐ Best: 0</p>
-            <div class="row">
-              <button class="btn secondary hidden" id="btnInstall">📲 INSTALL APP</button>
+          <div class="card wide menu-card">
+            <div class="menu-left">
+              <img src="assets/logo.svg" class="gamelogo" alt="Nemo Dash — Coral Escape" />
+              <div class="menu-title">NEMO DASH<span>CORAL ESCAPE</span></div>
+              <div id="gemBar">💎 <span id="menuGems">0</span></div>
+              <p id="menuBest">⭐ Best: 0</p>
+              <div class="row menu-play-row">
+                <button class="btn" id="btnPlay">▶ &nbsp;SWIM</button>
+                <button class="btn secondary" id="btnLevels">🌊 REEFS</button>
+                <button class="btn secondary" id="btnEndless">∞ ENDLESS</button>
+                <button class="btn secondary" id="btnHow">?</button>
+              </div>
+              <p id="endlessLock">🏆 Clear Level 5 to unlock Endless Reef</p>
+              <p class="ver">v<span id="verNum">?</span> • sound on for the full reef 🔊</p>
             </div>
-            <div id="roster"></div>
-            <div class="row">
-              <button class="btn" id="btnPlay">▶ &nbsp;SWIM</button>
-              <button class="btn secondary" id="btnLevels">🌊 REEFS</button>
-              <button class="btn secondary" id="btnEndless">∞ ENDLESS</button>
-              <button class="btn secondary" id="btnHow">?</button>
+            <div class="menu-right">
+              <div class="roster-title">🐠 CHOOSE YOUR FISH</div>
+              <div id="roster"></div>
             </div>
-            <p id="endlessLock">🏆 Clear Level 5 to unlock Endless Reef</p>
-            <p class="ver">v<span id="verNum">?</span> • sound on for the full reef 🔊</p>
           </div>
         </div>
 
@@ -222,14 +234,14 @@
       </div>
     </div>
 
-    <script src="js/utils.js?v=2.1"></script>
-    <script src="js/audio.js?v=2.1"></script>
-    <script src="js/data.js?v=2.1"></script>
-    <script src="js/state.js?v=2.1"></script>
-    <script src="js/world.js?v=2.1"></script>
-    <script src="js/flow.js?v=2.1"></script>
-    <script src="js/update.js?v=2.1"></script>
-    <script src="js/render.js?v=2.1"></script>
-    <script src="js/ui.js?v=2.1"></script>
+    <script src="js/utils.js?v=2.4"></script>
+    <script src="js/audio.js?v=2.4"></script>
+    <script src="js/data.js?v=2.4"></script>
+    <script src="js/state.js?v=2.4"></script>
+    <script src="js/world.js?v=2.4"></script>
+    <script src="js/flow.js?v=2.4"></script>
+    <script src="js/update.js?v=2.4"></script>
+    <script src="js/render.js?v=2.4"></script>
+    <script src="js/ui.js?v=2.4"></script>
   </body>
 </html>

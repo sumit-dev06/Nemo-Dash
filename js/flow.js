@@ -1,5 +1,9 @@
 // ---------- flow ----------
+let engulfT = 0;
 function startLevel(n) {
+  try {
+    AudioSys.stopEndStings();
+  } catch (e) {}
   level = clamp(Math.round(n) || 1, 1, MAX_LEVEL);
   endless = false;
   rememberRun(level, false);
@@ -41,6 +45,7 @@ function startLevel(n) {
   player.boosting = false;
   player.boostToggle = false;
   player.trappedIn = null;
+  player.x = 170;
   player.y = H / 2;
   player.vy = 0;
   player.invuln = 0;
@@ -70,6 +75,9 @@ function startLevel(n) {
   updateHud();
 }
 function startEndless() {
+  try {
+    AudioSys.stopEndStings();
+  } catch (e) {}
   endless = true;
   level = MAX_LEVEL;
   rememberRun(0, true);
@@ -103,6 +111,7 @@ function startEndless() {
   player.boosting = false;
   player.boostToggle = false;
   player.trappedIn = null;
+  player.x = 170;
   player.y = H / 2;
   player.vy = 0;
   player.invuln = 0;
@@ -280,7 +289,14 @@ function triggerDeath(reason) {
   slowmo = reason === 'bite' ? 1.2 : 0.5;
   if (reason === 'bite') {
     // chomp already snapped at the bite moment (engulfBy) — the roar follows a beat later
-    setTimeout(() => AudioSys.engulf(), 250);
+    // (cancelled if a new run starts first — see stopEndStings).
+    try {
+      if (engulfT) clearTimeout(engulfT);
+    } catch (e) {}
+    engulfT = setTimeout(() => {
+      engulfT = 0;
+      if (state === 'playing' && player.dead) AudioSys.engulf();
+    }, 250);
     burst(player.x, player.y, 60, '#ff5e62');
     burst(player.x, player.y, 25, '#ffd66e');
     addFloat(player.x, player.y - 46, 'Got you!', '#ff5e62');

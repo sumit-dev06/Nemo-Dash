@@ -41,15 +41,28 @@ function isTouchDevice() {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && state === 'playing') togglePause();
 });
-// landscape-only phones: portrait shows the turn overlay + pauses the run
+// landscape-only phones: portrait shows the rotate animation + install.
+// Menu stays hidden behind it in mobile browsers so there is no scrollable
+// menu in portrait — just "rotate to play" + native install when ready.
 function checkRotate() {
   const r = document.getElementById('rotate');
   if (!r) return;
   const portrait = window.innerHeight > window.innerWidth;
-  if (isTouchDevice() && portrait) {
+  const mobile = isTouchDevice();
+  if (mobile && portrait) {
     r.classList.remove('hidden');
+    document.body.classList.add('portrait-block');
+    // portrait install CTA: native-only — visible only when Chrome says installable
+    const pb = document.getElementById('btnInstallPortrait');
+    const canNative = !!deferredInstall && !isStandalone();
+    if (pb) pb.style.display = canNative ? '' : 'none';
+    const note = r.querySelector('.rotate-note');
+    if (note) note.style.display = canNative ? '' : 'none';
     if (state === 'playing') togglePause();
-  } else r.classList.add('hidden');
+  } else {
+    r.classList.add('hidden');
+    document.body.classList.remove('portrait-block');
+  }
 }
 window.addEventListener('resize', checkRotate);
 window.addEventListener('orientationchange', () => setTimeout(checkRotate, 250));
@@ -115,12 +128,15 @@ document.getElementById('btnHowBack').onclick = () => {
   hide('how');
   startLevel(1);
 };
-document.getElementById('btnInstall').onclick = installClick;
+const _btnMenuInstall = document.getElementById('btnInstall');
+if (_btnMenuInstall) _btnMenuInstall.onclick = installClick;
 document.getElementById('btnInstallTop').onclick = installClick;
+const _btnPortrait = document.getElementById('btnInstallPortrait');
+if (_btnPortrait) _btnPortrait.onclick = installClick;
 document.getElementById('btnInstallX').onclick = () => {
   AudioSys.click();
   try {
-    localStorage.setItem('nemoInstallX', '1');
+    localStorage.setItem('nemoInstallX_v2', '1');
   } catch (e) {}
   showInstallUI();
 };
@@ -283,10 +299,10 @@ window.addEventListener('error', (e) => {
   }
 });
 document.getElementById('stage').addEventListener('contextmenu', (e) => e.preventDefault());
-// fullscreen + landscape on first touch: browsers only allow it after a gesture,
-// so the very first tap/click goes fullscreen AND locks sideways (Android Chrome
-// rotates the phone by itself). iPhone has no such API: the installed standalone app
-// is already fullscreen, and the turn-sideways card guides browser play.
+// Fullscreen happens ONLY on game-start taps (SWIM / reef / retry), never on
+// every tap — so Chrome's system "to exit full screen..." toast appears at
+// most once per game start, not repeatedly. Installed PWA needs no API at
+// all (standalone = fullscreen, zero toast).
 function lockLandscape() {
   try {
     if (screen.orientation && screen.orientation.lock)
@@ -294,34 +310,21 @@ function lockLandscape() {
   } catch (e) {}
 }
 function goFullscreen() {
-  // already there? stand down for good.
-  if (document.fullscreenElement || document.webkitFullscreenElement) {
-    window.removeEventListener('pointerdown', goFullscreen);
-    window.removeEventListener('keydown', goFullscreen);
-    return;
-  }
-  // not there yet: try on EVERY tap/keypress until it takes (the first attempt can
-  // fail while the page is still settling — giving up after one try strands phones).
   try {
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      lockLandscape();
+      return;
+    }
     const el = document.documentElement;
     if (el.requestFullscreen && !document.fullscreenElement)
       el.requestFullscreen({ navigationUI: 'hide' })
         .then(lockLandscape)
-        .catch(() => {});
+        .catch(() => lockLandscape());
     else if (el.webkitRequestFullscreen && !document.webkitFullscreenElement)
       el.webkitRequestFullscreen();
     else lockLandscape();
   } catch (e) {}
 }
-window.addEventListener('pointerdown', goFullscreen);
-window.addEventListener('keydown', goFullscreen);
-window.addEventListener('fullscreenchange', () => {
-  if (document.fullscreenElement) {
-    lockLandscape();
-    window.removeEventListener('pointerdown', goFullscreen);
-    window.removeEventListener('keydown', goFullscreen);
-  }
-});
 // PWA: offline cache when served over http(s); silent no-op on file://
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -347,9 +350,14 @@ function isStandalone() {
     return false;
   }
 }
+// install UI: top toggle ALWAYS visible (unless installed/dismissed),
+// native dialog when Chrome says installable. Toggle never disappears just
+// because the prompt is not ready yet (e.g. LAN http test) — clicking it
+// fires the real "Install app / Nemo Dash / Cancel / Install" sheet when
+// available, otherwise a small note (never a shortcut flow, never a modal).
 function installDismissed() {
   try {
-    return localStorage.getItem('nemoInstallX') === '1';
+    return localStorage.getItem('nemoInstallX_v2') === '1';
   } catch (e) {
     return false;
   }
@@ -357,45 +365,66 @@ function installDismissed() {
 function maybeShowInstall() {
   showInstallUI();
 }
-// install UI: top banner + menu button, on phones AND desktop.
-// Auto prompt when the browser offers it (needs https + service worker);
-// otherwise the manual guide. Banner × dismisses the banner for good.
 function showInstallUI() {
   const b = document.getElementById('btnInstall');
   const bar = document.getElementById('installBanner');
   const stage = document.getElementById('stage');
-  const canPrompt = !!deferredInstall;
-  const manual = (isTouchDevice() || isIOS()) && !isStandalone();
-  const showBar = (canPrompt || manual) && !installDismissed();
+  const pb = document.getElementById('btnInstallPortrait');
+  const showBar = !isStandalone() && !installDismissed();
   if (bar) bar.classList.toggle('hidden', !showBar);
   if (stage) stage.classList.toggle('show-ib', !!showBar);
-  if (!b) return;
-  if (canPrompt) {
-    b.classList.remove('hidden');
-    b.textContent = '📲 INSTALL APP';
-  } else if (manual) {
-    b.classList.remove('hidden');
-    b.textContent = '📲 GET THE APP';
-  } else b.classList.add('hidden');
+  if (b) b.classList.toggle('hidden', true); // menu install removed (top banner only)
+  if (pb) pb.style.display = showBar ? '' : 'none';
+  checkRotate();
+}
+function showInstallToast(html) {
+  const t = document.getElementById('installToast');
+  if (!t) return;
+  t.innerHTML = html + '<br><span class="toast-x">GOT IT</span>';
+  t.classList.remove('hidden');
+  const x = t.querySelector('.toast-x');
+  if (x)
+    x.onclick = () => {
+      try {
+        AudioSys.click();
+      } catch (e) {}
+      t.classList.add('hidden');
+    };
+  clearTimeout(showInstallToast._t);
+  showInstallToast._t = setTimeout(() => t.classList.add('hidden'), 9000);
 }
 async function installClick() {
   AudioSys.ensure();
+  // Real native sheet first: "Install app / Nemo Dash / Cancel / Install".
   if (deferredInstall) {
     AudioSys.click();
-    deferredInstall.prompt();
-    await deferredInstall.userChoice.catch(() => {});
+    try {
+      deferredInstall.prompt();
+      await deferredInstall.userChoice.catch(() => {});
+    } catch (e) {}
     deferredInstall = null;
     showInstallUI();
-  } else {
-    AudioSys.click();
-    hide('menu');
-    show('iosGuide');
+    return;
   }
+  // Toggle is visible but browser has no native prompt yet (LAN http test,
+  // no SW yet, iOS). Small note only — no shortcut flow, no fullscreen modal.
+  AudioSys.click();
+  const secure = window.isSecureContext;
+  showInstallToast(
+    secure
+      ? '<b>Install is getting ready…</b> open this site in <b>Chrome Android over https</b> (your github.io link). Chrome then shows the system <b>Install app</b> sheet.'
+      : '<b>Heads up:</b> this test link is <b>http LAN</b> — browsers block real app install here. Open your <b>https github.io link in Chrome Android</b> to get the system <b>Install app</b> sheet.',
+  );
 }
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredInstall = e;
   maybeShowInstall();
+});
+window.addEventListener('appinstalled', () => {
+  deferredInstall = null;
+  showInstallUI();
+  checkRotate();
 });
 fitScreen();
 seedDecor();

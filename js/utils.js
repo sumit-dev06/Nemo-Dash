@@ -38,7 +38,9 @@ function fitScreen() {
   applyDPR();
   if (typeof player !== 'undefined') {
     player.y = clamp(player.y, 46, FLOOR_Y - 24);
-    player.x = Math.min(player.x, W - 120);
+    // hard lock: fish never drifts — x is always 170 (traps must not drag it left)
+    player.x = clamp(player.x, 80, Math.max(170, W - 120));
+    if (player.trappedIn) player.x = 170;
   }
   if (typeof snow !== 'undefined' && Array.isArray(snow)) {
     snow.length = 0;
