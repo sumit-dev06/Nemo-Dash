@@ -3,6 +3,31 @@
 // Static layers (water, rays, shimmer bar, vignette) are baked once per resize
 // into bgCache: one blit replaces ~8 fullscreen gradient fills. Big phone win.
 let bgCache = null;
+// lerp two hex colors (bake-time only, never per frame)
+function hexLerp(a, b, t) {
+  const pa = [1, 3, 5].map((i) => parseInt(a.substr(i, 2), 16));
+  const pb = [1, 3, 5].map((i) => parseInt(b.substr(i, 2), 16));
+  return (
+    '#' +
+    pa
+      .map((v, i) =>
+        Math.round(v + (pb[i] - v) * t)
+          .toString(16)
+          .padStart(2, '0'),
+      )
+      .join('')
+  );
+}
+// open-reef → deep-cave water palette, driven by cfg.cave
+function waterStops() {
+  let k = 0;
+  try {
+    k = caveK();
+  } catch (e) {}
+  const open = ['#0d4a6e', '#083a5c', '#052a44', '#031c2e'];
+  const cave = ['#02090f', '#01070d', '#010509', '#000304'];
+  return { stops: open.map((c, i) => hexLerp(c, cave[i], k)), k };
+}
 function bakeBackground() {
   try {
     bgCache = document.createElement('canvas');
@@ -10,15 +35,16 @@ function bakeBackground() {
     bgCache.height = Math.round(H * DPR);
     const b = bgCache.getContext('2d');
     b.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const { stops, k } = waterStops();
     const g = b.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, '#0d4a6e');
-    g.addColorStop(0.35, '#083a5c');
-    g.addColorStop(0.7, '#052a44');
-    g.addColorStop(1, '#031c2e');
+    g.addColorStop(0, stops[0]);
+    g.addColorStop(0.35, stops[1]);
+    g.addColorStop(0.7, stops[2]);
+    g.addColorStop(1, stops[3]);
     b.fillStyle = g;
     b.fillRect(0, 0, W, H);
     b.save();
-    b.globalAlpha = 0.1;
+    b.globalAlpha = 0.1 * (1 - k) + 0.01; // god rays die out in the cave
     b.fillStyle = '#bfefff';
     for (let i = 0; i < 4; i++) {
       const bx = 120 + i * 230;
@@ -35,7 +61,7 @@ function bakeBackground() {
     b.fillRect(0, 0, W, 10);
     const v = b.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.85);
     v.addColorStop(0, 'rgba(0,0,0,0)');
-    v.addColorStop(1, 'rgba(0,5,12,0.55)');
+    v.addColorStop(1, 'rgba(0,5,12,' + (0.55 + 0.3 * k).toFixed(2) + ')');
     b.fillStyle = v;
     b.fillRect(0, 0, W, H);
   } catch (e) {
@@ -49,15 +75,16 @@ function render() {
   // 1+2) water column + god rays (baked; fallback paints direct)
   if (bgCache) ctx.drawImage(bgCache, 0, 0);
   else {
+    const { stops, k } = waterStops();
     const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, '#0d4a6e');
-    g.addColorStop(0.35, '#083a5c');
-    g.addColorStop(0.7, '#052a44');
-    g.addColorStop(1, '#031c2e');
+    g.addColorStop(0, stops[0]);
+    g.addColorStop(0.35, stops[1]);
+    g.addColorStop(0.7, stops[2]);
+    g.addColorStop(1, stops[3]);
     ctx.fillStyle = g;
     ctx.fillRect(-20, -20, W + 40, H + 40);
     ctx.save();
-    ctx.globalAlpha = 0.1;
+    ctx.globalAlpha = 0.1 * (1 - k) + 0.01;
     ctx.fillStyle = '#bfefff';
     for (let i = 0; i < 4; i++) {
       const bx = 120 + i * 230 + Math.sin(time * 0.3 + i) * 30;
@@ -97,6 +124,9 @@ function render() {
     ctx.fill();
   }
 
+  // 3.5) cave roof closes in from the top (open reefs: invisible, zero cost)
+  if (caveK() > 0.02) drawCaveRoof(caveK());
+
   // 4) sandy floor with texture
   const sand = ctx.createLinearGradient(0, FLOOR_Y, 0, H);
   sand.addColorStop(0, '#8a6f4d');
@@ -112,6 +142,11 @@ function render() {
     ctx.beginPath();
     ctx.ellipse(sx, FLOOR_Y + 18 + ((i * 53) % 34), 14 + (i % 4) * 5, 3.5, 0, 0, TAU);
     ctx.fill();
+  }
+  // cave floor lies in shadow
+  if (caveK() > 0.02) {
+    ctx.fillStyle = 'rgba(0,2,8,' + (0.55 * caveK()).toFixed(2) + ')';
+    ctx.fillRect(-20, FLOOR_Y, W + 40, H - FLOOR_Y + 20);
   }
 
   // 5) current bands (teal translucent)
@@ -148,6 +183,13 @@ function render() {
     const sx = ((((s.x - scrollX * 0.9) % 2600) + 2600) % 2600) - 200;
     if (sx < -60 || sx > W + 60) continue;
     drawSeaweed(sx, FLOOR_Y, s);
+  }
+  // starfish beds on the seabed
+  for (const st of starfish) {
+    const sx = ((((st.x - scrollX * 0.9) % 2600) + 2600) % 2600) - 200;
+    if (sx < -40 || sx > W + 40) continue;
+    const sy = clamp(FLOOR_Y + 30 + st.dx * 0.4, FLOOR_Y + 12, H - 8);
+    drawStarfish(sx, sy, st.s, st.color, time + st.ph);
   }
   drawCrabs();
 
@@ -1363,6 +1405,69 @@ function drawCoral(x, base, sc, type, ph) {
   ctx.restore();
 }
 const crabT = [];
+function drawStarfish(x, y, s, color, ph) {
+  // cheap 5-arm star: shadow + arms + core, no gradients (phone-safe)
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(0, 2, s, s * 0.4, 0, 0, TAU);
+  ctx.fill();
+  const wob = Math.sin(ph * 0.7) * 0.06;
+  ctx.fillStyle = color;
+  for (let a = 0; a < 5; a++) {
+    const ang = wob + (a * TAU) / 5 - Math.PI / 2;
+    ctx.save();
+    ctx.rotate(ang);
+    ctx.beginPath();
+    ctx.ellipse(0, -s * 0.62, s * 0.3, s * 0.62, 0, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.beginPath();
+  ctx.arc(0, 0, s * 0.32, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath();
+  ctx.arc(0, 0, s * 0.16, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+}
+function drawCaveRoof(k) {
+  // dark rock band closing in from the top + stalactite teeth + glowworm dots.
+  // Alpha scales with caveK so open reefs are untouched. Parallax 0.9.
+  const roofH = 46 + 78 * k;
+  ctx.save();
+  const g = ctx.createLinearGradient(0, 0, 0, roofH + 30);
+  g.addColorStop(0, 'rgba(2,5,9,' + (0.55 + 0.45 * k).toFixed(2) + ')');
+  g.addColorStop(1, 'rgba(8,14,22,' + (0.35 + 0.55 * k).toFixed(2) + ')');
+  ctx.fillStyle = g;
+  ctx.fillRect(-20, -10, W + 40, roofH + 10);
+  for (const t of caveTeeth) {
+    const sx = ((((t.x - scrollX * 0.9) % 2600) + 2600) % 2600) - 200;
+    if (sx < -80 || sx > W + 80) continue;
+    const len = (20 + t.len * k) * (0.9 + 0.1 * Math.sin(time * 0.8 + t.ph));
+    ctx.fillStyle = 'rgba(6,10,17,' + (0.5 + 0.5 * k).toFixed(2) + ')';
+    ctx.beginPath();
+    ctx.moveTo(sx - t.w / 2, roofH - 8);
+    ctx.lineTo(sx + t.w / 2, roofH - 8);
+    ctx.lineTo(sx + Math.sin(time * 0.6 + t.ph) * 4, roofH - 8 + len);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // glowworms: a few cyan specks on the roof that read as cave light
+  ctx.fillStyle = 'rgba(125,255,220,' + (0.5 * k).toFixed(2) + ')';
+  for (let i = 0; i < 12; i++) {
+    const gx = ((((i * 397 + 130 - scrollX * 0.9) % (W + 120)) + (W + 120)) % (W + 120)) - 60;
+    const gy = 12 + ((i * 61) % Math.max(20, roofH - 20));
+    const tw = 1 + Math.sin(time * 2.4 + i * 1.7) * 0.8;
+    ctx.beginPath();
+    ctx.arc(gx, gy, Math.max(0.6, tw), 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+}
 function drawCrabs() {
   // 3 crabs patrolling the floor
   for (let i = 0; i < 3; i++) {

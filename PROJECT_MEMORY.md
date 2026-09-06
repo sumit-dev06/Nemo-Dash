@@ -99,8 +99,15 @@
   Puffy (4 HP) devours fry + big + angler; Razor (5 HP) devours everything incl. enemy sharks.
 - 10 levels (`LEVELS` table in `js/data.js`): L1 pure swim → L2 jellies/nets → L3 hooks/currents
   → L4 sharks → L5 peak+anglers → L6 breather → L7–L9 climb → L10 Leviathan (280 speed, fair caps).
-  L5 clear opens endless (`nemoEndless`); L10 clear crowns (`nemoCrowned`); clears unlock next
+  L5 clear opens endless (`nemoEndless`); final clear crowns (`nemoCrowned`); clears unlock next
   (`nemoMaxLevel`). Endless tiers/900m to speed 300 max; endless death banks +1💎/600m.
+- 15 levels (v2.6): L11–L15 are the cave (Cave Mouth → Heart of the Cave, `cfg.cave`
+  0.35→1.0): darker baked water, rock roof + stalactites + glowworms, narrower swim
+  band (`swimTop/swimBot` in `js/utils.js`), spawns clamped to the band, speed ≤298,
+  intervals ≥~1s, predator mult capped 1.8. Endless tier 4+ descends into the cave
+  (`Endless Cave` past tier 5, re-bakes once per tier). Starfish beds on the seabed
+  everywhere (`starfish` in `seedDecor`, `drawStarfish`). Perf: bake-time gradients
+  only, ~30 extra arcs/frame, no per-frame allocations.
 - Vanish-proofing: finite watchdog; compat `rrPath`; `#errBox` trap (now with line numbers);
   tracker glow topmost; 70-assert headless suite incl. DOM-ID cross-check + full-cast/fuzz renders.
 - Known limits: art is stylized-procedural; no native APK (PWA install instead for now);

@@ -27,13 +27,33 @@ function seedDecor() {
     snow.push({ x: rand(0, W), y: rand(0, H), z: rand(0.2, 1), s: rand(0.6, 2.2) });
   for (let i = 0; i < cfg.cur; i++) {
     currents.push({
-      y: rand(90, H - 160),
+      y: rand(swimTop() + 40, Math.max(swimTop() + 60, swimBot() - 60)),
       h: rand(70, 130),
       force: rand(0, 1) > 0.5 ? 1 : -1,
       strength: rand(0.8, 1.2) * cfg.curStr,
       ph: rand(0, TAU),
     });
   }
+  // cave teeth: stalactites hanging from the cave roof (drawn by caveK alpha)
+  caveTeeth = [];
+  for (let i = 0; i < 16; i++)
+    caveTeeth.push({
+      x: rand(0, 2600),
+      len: rand(40, 110),
+      w: rand(26, 60),
+      ph: rand(0, TAU),
+    });
+  // starfish beds on the seabed (all reefs — the bottom feels alive)
+  starfish = [];
+  const starCols = ['#ff8c42', '#ff6b81', '#c77dff', '#ffd66e'];
+  for (let i = 0; i < 12; i++)
+    starfish.push({
+      x: rand(0, 2600),
+      dx: rand(-30, 30),
+      s: rand(7, 14),
+      color: starCols[(Math.random() * starCols.length) | 0],
+      ph: rand(0, TAU),
+    });
   gate = null;
 }
 
@@ -54,7 +74,7 @@ function spawnPredator() {
   // mix driven by the level table (sharks/anglers debut mid-game, never day one)
   const r = Math.random();
   const t = r < cfg.sharkW ? 'shark' : r < cfg.sharkW + cfg.anglerW ? 'angler' : 'big';
-  const y = rand(70, FLOOR_Y - 60);
+  const y = rand(swimTop() + 10, Math.max(swimTop() + 30, swimBot() - 30));
   const base = t === 'shark' ? 150 : t === 'angler' ? 120 : 105;
   const s = base * rand(0.85, 1.2);
   predators.push({
@@ -77,7 +97,7 @@ function spawnPredator() {
 function spawnJelly() {
   jellies.push({
     x: spawnX() - 40,
-    y: rand(90, FLOOR_Y - 90),
+    y: rand(swimTop() + 20, Math.max(swimTop() + 40, swimBot() - 40)),
     vx: -(cfg.speed * 0.45 + 30),
     r: rand(16, 24),
     ph: rand(0, TAU),
@@ -113,7 +133,7 @@ function spawnHook() {
 function spawnPearl() {
   pearlsArr.push({
     x: spawnX() - 60,
-    y: rand(70, FLOOR_Y - 50),
+    y: rand(swimTop() + 10, Math.max(swimTop() + 30, swimBot() - 30)),
     r: 9,
     ph: rand(0, TAU),
     vx: -(cfg.speed * 0.9),
@@ -121,16 +141,16 @@ function spawnPearl() {
 }
 function spawnPower() {
   const kind = ['shield', 'magnet', 'slow'][(Math.random() * 3) | 0];
-  powers.push({ x: spawnX() - 60, y: rand(90, FLOOR_Y - 90), kind, ph: 0, vx: -(cfg.speed * 0.8) });
+  powers.push({ x: spawnX() - 60, y: rand(swimTop() + 20, Math.max(swimTop() + 40, swimBot() - 40)), kind, ph: 0, vx: -(cfg.speed * 0.8) });
 }
 function spawnFry() {
   // school of small silver prey — free snacks for every fish, any size
-  const y0 = rand(90, FLOOR_Y - 90),
+  const y0 = rand(swimTop() + 20, Math.max(swimTop() + 40, swimBot() - 40)),
     n = 3 + ((Math.random() * 3) | 0);
   for (let i = 0; i < n; i++)
     fries.push({
       x: spawnX() - 50 + i * rand(18, 30),
-      y: clamp(y0 + rand(-36, 36), 60, FLOOR_Y - 40),
+      y: clamp(y0 + rand(-36, 36), swimTop() + 10, swimBot() - 10),
       vx: -(cfg.speed * 0.75 + 70),
       r: rand(5, 7),
       ph: rand(0, TAU),

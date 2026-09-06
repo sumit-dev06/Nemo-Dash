@@ -37,7 +37,7 @@ function fitScreen() {
   DPR = dprTarget;
   applyDPR();
   if (typeof player !== 'undefined') {
-    player.y = clamp(player.y, 46, FLOOR_Y - 24);
+    player.y = clamp(player.y, swimTop(), swimBot());
     // hard lock: fish never drifts — x is always 170 (traps must not drag it left)
     player.x = clamp(player.x, 80, Math.max(170, W - 120));
     if (player.trappedIn) player.x = 170;
@@ -55,6 +55,21 @@ window.addEventListener('orientationchange', () => setTimeout(fitScreen, 200));
 // ---------- helpers ----------
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+// cave factor 0 (open reef) → 1 (deep cave); narrows the swim band.
+function caveK() {
+  try {
+    return clamp((typeof cfg !== 'undefined' && cfg && cfg.cave) || 0, 0, 1);
+  } catch (e) {
+    return 0;
+  }
+}
+// swim band: ceiling drops as the cave closes in, floor rises slightly.
+function swimTop() {
+  return 46 + caveK() * 78;
+}
+function swimBot() {
+  return FLOOR_Y - 24 - caveK() * 40;
+}
 const lerp = (a, b, t) => a + (b - a) * t;
 const TAU = Math.PI * 2;
 function circleHit(ax, ay, ar, bx, by, br) {

@@ -34,6 +34,8 @@ let gate = null;
 let seaweeds = [],
   corals = [],
   rocksFar = [],
+  caveTeeth = [],
+  starfish = [],
   snow = [];
 let boatX = 0;
 

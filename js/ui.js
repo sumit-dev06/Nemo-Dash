@@ -437,6 +437,16 @@ updatePlayBtn();
 maybeShowInstall();
 checkRotate();
 showHud(false);
+// boot splash fades once the first frame is up (fast everywhere, failsafe 2.5s
+// so it can never trap the menu if something stalls).
+function hideBoot() {
+  const b = document.getElementById('boot');
+  if (!b || b.classList.contains('hide')) return;
+  b.classList.add('hide');
+  setTimeout(() => b.classList.add('gone'), 500);
+}
+requestAnimationFrame(() => setTimeout(hideBoot, 450));
+setTimeout(hideBoot, 2500);
 // shareable/test links: ?play=3 starts reef 3, ?play=endless starts Endless Reef
 try {
   const q = new URLSearchParams(location.search).get('play');

@@ -1,8 +1,9 @@
-// ---------- level design: 10 hand-tuned reefs + endless ----------
+// ---------- level design: 15 hand-tuned reefs (1-10 open reef, 11-15 cave) + endless ----------
 // Curve research (docs/ROADMAP.md): sawtooth, not a straight ramp —
 // one new mechanic at a time in isolation, a breather at L6, peaks at L5/L8/L10.
-// Fairness floors: speed cap 285, spawn intervals never below ~1s (always reactable).
-const MAX_LEVEL = 10;
+// L11+ enter the cave: darker water, narrower path (cfg.cave 0→1), fair caps kept
+// (speed ≤300, spawn intervals never below ~1s, always reactable).
+const MAX_LEVEL = 15;
 const ENDLESS_AT = 5; // clear reef 5 → Endless Reef opens (coronation still at 10)
 // goal: px to swim • speed: world px/s • spawn gaps in seconds • hungry: hunter %
 // sharkW/anglerW: predator mix • first: opening calm before 1st predator
@@ -177,6 +178,96 @@ const LEVELS = [
     anglerW: 0.3,
     first: 1.2,
   },
+  {
+    name: 'Cave Mouth',
+    goal: 3400,
+    speed: 272,
+    pred: 1.25,
+    jelly: 2.6,
+    net: 2.8,
+    hook: 3.4,
+    fry: 1.0,
+    power: 8,
+    cur: 2,
+    curStr: 230,
+    hungry: 0.8,
+    sharkW: 0.28,
+    anglerW: 0.28,
+    first: 1.3,
+    cave: 0.35,
+  },
+  {
+    name: 'Dark Descent',
+    goal: 3500,
+    speed: 278,
+    pred: 1.2,
+    jelly: 2.5,
+    net: 2.7,
+    hook: 3.3,
+    fry: 1.0,
+    power: 8,
+    cur: 3,
+    curStr: 235,
+    hungry: 0.82,
+    sharkW: 0.3,
+    anglerW: 0.3,
+    first: 1.2,
+    cave: 0.55,
+  },
+  {
+    name: 'Narrow Squeeze',
+    goal: 3600,
+    speed: 285,
+    pred: 1.15,
+    jelly: 2.4,
+    net: 2.6,
+    hook: 3.2,
+    fry: 0.95,
+    power: 8,
+    cur: 3,
+    curStr: 240,
+    hungry: 0.85,
+    sharkW: 0.3,
+    anglerW: 0.3,
+    first: 1.2,
+    cave: 0.75,
+  },
+  {
+    name: 'Abyssal Halls',
+    goal: 3700,
+    speed: 292,
+    pred: 1.1,
+    jelly: 2.3,
+    net: 2.5,
+    hook: 3.1,
+    fry: 0.9,
+    power: 8,
+    cur: 3,
+    curStr: 245,
+    hungry: 0.87,
+    sharkW: 0.3,
+    anglerW: 0.3,
+    first: 1.1,
+    cave: 0.9,
+  },
+  {
+    name: 'Heart of the Cave',
+    goal: 3800,
+    speed: 298,
+    pred: 1.05,
+    jelly: 2.2,
+    net: 2.4,
+    hook: 3.0,
+    fry: 0.9,
+    power: 8,
+    cur: 3,
+    curStr: 250,
+    hungry: 0.88,
+    sharkW: 0.3,
+    anglerW: 0.3,
+    first: 1.1,
+    cave: 1.0,
+  },
 ];
 function levelConfig(n) {
   const L = LEVELS[clamp(Math.round(n) || 1, 1, MAX_LEVEL) - 1];
@@ -199,16 +290,19 @@ function levelConfig(n) {
     sharkW: L.sharkW,
     anglerW: L.anglerW,
     first: L.first,
-    predSpeedMul: 1 + (n - 1) * 0.08,
+    cave: L.cave || 0, // 0 = open reef, →1 = deep cave (darker + narrower)
+    predSpeedMul: Math.min(1.8, 1 + (n - 1) * 0.08), // capped so cave stays fair
     hunterBrain: n >= 2, // predators steer toward player
   };
 }
 // Endless Reef: tier rises every 900m, all curves capped so runs stay fair, never impossible.
+// Deep tiers (4+) descend into the cave: darker + narrower as you swim further.
 function endlessCfg(dist) {
   const tier = Math.floor(Math.max(0, dist) / 900);
+  const cave = tier < 4 ? 0 : Math.min(1, (tier - 3) / 3);
   return {
     n: '∞',
-    name: 'Endless Reef',
+    name: cave > 0.5 ? 'Endless Cave' : 'Endless Reef',
     goal: Infinity,
     speed: Math.min(300, 195 + tier * 9),
     predEvery: Math.max(0.85, 1.9 - tier * 0.09),
@@ -224,6 +318,7 @@ function endlessCfg(dist) {
     sharkW: Math.min(0.3, 0.1 + tier * 0.02),
     anglerW: Math.min(0.3, 0.1 + tier * 0.02),
     first: 1.2,
+    cave,
     predSpeedMul: 1 + tier * 0.03,
     hunterBrain: true,
     endless: true,
@@ -236,7 +331,7 @@ let bestEndlessDist = parseInt(localStorage.getItem('nemoBestEndlessDist') || '0
 // reef progress: highest unlocked reef (clearing reef N unlocks N+1)
 let maxLevel = parseInt(localStorage.getItem('nemoMaxLevel') || '1', 10) || 1;
 maxLevel = clamp(maxLevel, 1, MAX_LEVEL);
-let crowned = localStorage.getItem('nemoCrowned') === '1'; // cleared reef 10 at least once
+let crowned = localStorage.getItem('nemoCrowned') === '1'; // cleared final reef at least once
 // resume memory: where you played last (reef number, or endless)
 let lastLevel = parseInt(localStorage.getItem('nemoLastLevel') || '1', 10) || 1;
 lastLevel = clamp(lastLevel, 1, MAX_LEVEL);
@@ -261,7 +356,7 @@ function updatePlayBtn() {
 }
 
 // ---------- fish roster: unlock bigger fish with gems; bigger fish eat smaller ones ----------
-const VERSION = '2.5';
+const VERSION = '2.6';
 const FISHES = [
   {
     id: 'nemo',

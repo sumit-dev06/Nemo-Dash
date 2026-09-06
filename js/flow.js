@@ -58,6 +58,7 @@ function startLevel(n) {
   player.deadReason = '';
   player.heartT = 0;
   seedDecor();
+  if (typeof bakeBackground !== 'undefined') bakeBackground(); // cave darkness is baked
   shake = 0;
   slowmo = 0;
   state = 'playing';
@@ -70,7 +71,7 @@ function startLevel(n) {
   }, 6000);
   banner(
     'LEVEL ' + level + ' — ' + cfg.name,
-    level === 1 ? 'REACH THE CORAL GATE 🏁' : pickFlavor(),
+    level === 1 ? 'REACH THE CORAL GATE 🏁' : level === 11 ? 'INTO THE DARK 🕳️' : pickFlavor(),
   );
   updateHud();
 }
@@ -124,6 +125,7 @@ function startEndless() {
   player.deadReason = '';
   player.heartT = 0;
   seedDecor();
+  if (typeof bakeBackground !== 'undefined') bakeBackground();
   shake = 0;
   slowmo = 0;
   state = 'playing';
@@ -188,14 +190,16 @@ function levelComplete() {
   }
   document.getElementById('doneFlavor').textContent =
     level >= MAX_LEVEL
-      ? '👑 REEF CONQUERED! You beat all 10 reefs — the Endless Reef is yours.'
-      : level === ENDLESS_AT
-        ? '🌊 ENDLESS REEF UNLOCKED! How far can you swim?'
-        : level === 1
-          ? 'The reef gets darker ahead… predators smell you now.'
-          : level === 2
-            ? 'Nets everywhere. The sailors know your route.'
-            : 'Level ' + (level + 1) + ' waters run red. Good luck, little one.';
+      ? '👑 CAVE CONQUERED! You beat all 15 reefs — the Endless Cave is yours.'
+      : level === 10
+        ? '🕳️ Something dark opens ahead… the cave mouth waits.'
+        : level === ENDLESS_AT
+          ? '🌊 ENDLESS REEF UNLOCKED! How far can you swim?'
+          : level === 1
+            ? 'The reef gets darker ahead… predators smell you now.'
+            : level === 2
+              ? 'Nets everywhere. The sailors know your route.'
+              : 'Level ' + (level + 1) + ' waters run red. Good luck, little one.';
   document.getElementById('btnNext').textContent =
     level >= MAX_LEVEL ? 'ENDLESS REEF ∞ →' : 'NEXT REEF ▶';
   show('levelDone');

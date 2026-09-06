@@ -79,16 +79,20 @@ function update(dt, rawDt) {
     // endless hardness climbs with distance, one tier per 900m (capped, always fair)
     const t = Math.floor(distance / 900);
     if (t !== cfg.tier) {
+      const wasCave = (cfg.cave || 0);
       cfg = endlessCfg(distance);
       currents = [];
       for (let i = 0; i < cfg.cur; i++)
         currents.push({
-          y: rand(90, H - 160),
+          y: rand(swimTop() + 40, Math.max(swimTop() + 60, swimBot() - 60)),
           h: rand(70, 130),
           force: rand(0, 1) > 0.5 ? 1 : -1,
           strength: rand(0.8, 1.2) * cfg.curStr,
           ph: rand(0, TAU),
         });
+      // descending into the cave mid-run: re-bake the darker water once per tier
+      if (Math.abs((cfg.cave || 0) - wasCave) > 0.05 && typeof bakeBackground !== 'undefined')
+        bakeBackground();
     }
   }
   score = Math.floor(distance / 10) + pearls * 25 + nearCount * 15 + eatenPts;
@@ -149,12 +153,12 @@ function update(dt, rawDt) {
   player.vy *= drag;
   player.vy = clamp(player.vy, -MAXV, MAXV);
   player.y += player.vy * dt;
-  if (player.y < 46) {
-    player.y = 46;
+  if (player.y < swimTop()) {
+    player.y = swimTop();
     player.vy = Math.abs(player.vy) * 0.3;
   }
-  if (player.y > FLOOR_Y - 24) {
-    player.y = FLOOR_Y - 24;
+  if (player.y > swimBot()) {
+    player.y = swimBot();
     player.vy = -Math.abs(player.vy) * 0.25;
     if (Math.abs(player.vy) > 260) {
       damage('crab', player.x, player.y);
@@ -505,7 +509,7 @@ function update(dt, rawDt) {
     }
   }
   if (player.y < -40 || player.y > H + 40) {
-    player.y = clamp(player.y, 60, FLOOR_Y - 40);
+    player.y = clamp(player.y, swimTop() + 14, swimBot() - 16);
     player.vy = 0;
     damage('out', player.x, player.y);
   }

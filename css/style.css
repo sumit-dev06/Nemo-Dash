@@ -849,6 +849,138 @@ kbd {
     font-size: 11px;
   }
 }
+/* ============ boot splash: game launch screen (fades on first frame) ============ */
+#boot {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: radial-gradient(900px 600px at 50% 30%, #0a3a5a 0%, #041e33 60%, #010c16 100%);
+  overflow: hidden;
+  transition: opacity 0.45s ease;
+}
+#boot.hide {
+  opacity: 0;
+  pointer-events: none;
+}
+#boot.gone {
+  display: none;
+}
+.boot-logo {
+  width: min(340px, 60vw);
+  height: auto;
+  animation: bootPop 0.7s ease-out;
+  filter: drop-shadow(0 10px 30px rgba(0, 0, 0, 0.6));
+}
+@keyframes bootPop {
+  0% {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.boot-bar {
+  width: min(220px, 50vw);
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+.boot-fill {
+  height: 100%;
+  width: 40%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #3df5a6, #22c8ee);
+  animation: bootSlide 1s ease-in-out infinite;
+}
+@keyframes bootSlide {
+  0% {
+    margin-left: -40%;
+  }
+  100% {
+    margin-left: 100%;
+  }
+}
+.boot-tag {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  color: #7dffc4;
+  animation: bootBlink 1.2s ease-in-out infinite;
+}
+@keyframes bootBlink {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+#boot .bubble {
+  position: absolute;
+  bottom: -20px;
+  border-radius: 50%;
+  border: 2px solid rgba(200, 240, 255, 0.5);
+  background: rgba(200, 240, 255, 0.08);
+  animation: bootRise linear infinite;
+}
+#boot .b1 {
+  left: 18%;
+  width: 14px;
+  height: 14px;
+  animation-duration: 2.2s;
+}
+#boot .b2 {
+  left: 34%;
+  width: 9px;
+  height: 9px;
+  animation-duration: 1.7s;
+  animation-delay: 0.4s;
+}
+#boot .b3 {
+  left: 55%;
+  width: 18px;
+  height: 18px;
+  animation-duration: 2.6s;
+  animation-delay: 0.2s;
+}
+#boot .b4 {
+  left: 72%;
+  width: 11px;
+  height: 11px;
+  animation-duration: 1.9s;
+  animation-delay: 0.7s;
+}
+#boot .b5 {
+  left: 86%;
+  width: 15px;
+  height: 15px;
+  animation-duration: 2.4s;
+  animation-delay: 0.1s;
+}
+@keyframes bootRise {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(-110vh);
+    opacity: 0;
+  }
+}
+
 /* touch GPUs: backdrop blur forces a full-screen blur pass every frame while the
    reef animates behind it. Flat translucent fills look the same, cost ~nothing. */
 @media (pointer: coarse) {
