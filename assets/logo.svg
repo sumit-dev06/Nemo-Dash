@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360" role="img" aria-label="Nemo Dash logo — a clownfish in a bubble under water">
+  <defs>
+    <linearGradient id="waterBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0d4a6e"/>
+      <stop offset="0.45" stop-color="#083a5c"/>
+      <stop offset="1" stop-color="#031c2e"/>
+    </linearGradient>
+    <linearGradient id="bodyGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffc25e"/>
+      <stop offset="0.45" stop-color="#ff8c2e"/>
+      <stop offset="1" stop-color="#d94f10"/>
+    </linearGradient>
+    <linearGradient id="tailGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#e2571b"/>
+      <stop offset="1" stop-color="#ff9d2e"/>
+    </linearGradient>
+    <linearGradient id="titleGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffd66e"/>
+      <stop offset="0.35" stop-color="#ff8c42"/>
+      <stop offset="0.65" stop-color="#3df5a6"/>
+      <stop offset="1" stop-color="#4dc9ff"/>
+    </linearGradient>
+    <radialGradient id="glowRing" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0.82" stop-color="#7de9ff" stop-opacity="0"/>
+      <stop offset="0.94" stop-color="#7de9ff" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#bfefff" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="bodyClip">
+      <ellipse cx="330" cy="150" rx="95" ry="48"/>
+    </clipPath>
+  </defs>
+
+  <!-- water -->
+  <rect x="0" y="0" width="640" height="360" rx="28" fill="url(#waterBg)"/>
+  <polygon points="90,0 140,0 210,360 130,360" fill="#ffffff" opacity="0.06"/>
+  <polygon points="300,0 330,0 380,360 330,360" fill="#ffffff" opacity="0.05"/>
+  <polygon points="470,0 520,0 590,360 510,360" fill="#ffffff" opacity="0.06"/>
+
+  <!-- distant fish silhouettes -->
+  <g fill="#02141f" opacity="0.55">
+    <ellipse cx="110" cy="120" rx="26" ry="9"/>
+    <polygon points="84,120 70,110 70,130"/>
+    <ellipse cx="545" cy="95" rx="20" ry="7"/>
+    <polygon points="565,95 577,87 577,103"/>
+  </g>
+
+  <!-- sand + seaweed -->
+  <ellipse cx="320" cy="372" rx="360" ry="60" fill="#6e5739"/>
+  <ellipse cx="320" cy="352" rx="360" ry="26" fill="#8a6f4d" opacity="0.85"/>
+  <g stroke="#1d5c43" stroke-width="14" stroke-linecap="round" fill="none" opacity="0.9">
+    <path d="M70,350 C60,300 84,282 72,228"/>
+    <path d="M104,352 C110,312 92,296 102,256"/>
+    <path d="M572,350 C582,300 560,284 570,230"/>
+  </g>
+
+  <!-- rising bubbles -->
+  <g stroke="#c8f0ff" stroke-width="2.5" fill="rgba(200,240,255,0.08)">
+    <circle cx="150" cy="255" r="10"/>
+    <circle cx="180" cy="205" r="7"/>
+    <circle cx="505" cy="250" r="12"/>
+    <circle cx="540" cy="195" r="8"/>
+    <circle cx="95" cy="300" r="6"/>
+  </g>
+  <g fill="#ffffff" opacity="0.7">
+    <circle cx="147" cy="252" r="2.4"/>
+    <circle cx="501" cy="246" r="2.8"/>
+  </g>
+
+  <!-- bubble aura + ring -->
+  <circle cx="330" cy="150" r="140" fill="url(#glowRing)"/>
+  <circle cx="330" cy="150" r="124" fill="none" stroke="#bfefff" stroke-width="5" opacity="0.5"/>
+  <path d="M232,105 A124,124 0 0 1 292,36" fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round" opacity="0.75"/>
+
+  <!-- ===== Nemo ===== -->
+  <g>
+    <!-- tail -->
+    <path d="M238,136 C205,116 192,110 176,106 C189,128 189,172 176,194 C192,190 205,184 238,164 Z"
+      fill="url(#tailGrad)" stroke="rgba(120,30,0,0.5)" stroke-width="2"/>
+    <!-- dorsal fin -->
+    <path d="M282,104 C308,76 352,74 380,100 C352,94 310,97 282,104 Z" fill="#c43d08"/>
+    <!-- body -->
+    <ellipse cx="330" cy="150" rx="95" ry="48" fill="url(#bodyGrad)"/>
+    <!-- stripes clipped to body -->
+    <g clip-path="url(#bodyClip)">
+      <ellipse cx="372" cy="150" rx="27" ry="50" fill="#1a1a1a"/>
+      <ellipse cx="372" cy="150" rx="19" ry="50" fill="#ffffff"/>
+      <ellipse cx="296" cy="150" rx="29" ry="50" fill="#1a1a1a"/>
+      <ellipse cx="296" cy="150" rx="21" ry="50" fill="#ffffff"/>
+      <ellipse cx="340" cy="172" rx="66" ry="20" fill="#fff0dc" opacity="0.45"/>
+    </g>
+    <!-- pectoral fin -->
+    <ellipse cx="348" cy="172" rx="10" ry="21" fill="#ffaa50" opacity="0.95" transform="rotate(24 348 172)"/>
+    <!-- gill curve -->
+    <path d="M358,128 A26,26 0 0 1 358,172" fill="none" stroke="rgba(150,40,0,0.45)" stroke-width="2.5"/>
+    <!-- eye -->
+    <circle cx="390" cy="136" r="17" fill="#ffffff"/>
+    <circle cx="395" cy="136" r="9" fill="#101418"/>
+    <circle cx="398" cy="133" r="3.2" fill="#ffffff"/>
+    <!-- smile -->
+    <path d="M386,164 Q396,172 408,165" fill="none" stroke="rgba(90,20,0,0.7)" stroke-width="4" stroke-linecap="round"/>
+  </g>
+
+  <!-- ===== wordmark ===== -->
+  <text x="320" y="318" text-anchor="middle" font-family="Trebuchet MS, Verdana, Arial, sans-serif"
+    font-size="60" font-weight="900" letter-spacing="5" fill="url(#titleGrad)"
+    stroke="#03202f" stroke-width="2" paint-order="stroke">NEMO DASH</text>
+  <text x="320" y="344" text-anchor="middle" font-family="Trebuchet MS, Verdana, Arial, sans-serif"
+    font-size="19" font-weight="700" letter-spacing="10" fill="#7dffc4">CORAL ESCAPE</text>
+</svg>

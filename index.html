@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#041e33" />
+    <title>NEMO DASH — Coral Escape</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Nemo Dash" />
+    <link rel="stylesheet" href="css/style.css?v=2.1" />
+  </head>
+  <body>
+    <div id="wrap">
+      <div id="stage">
+        <canvas id="game" width="960" height="540"></canvas>
+        <div id="vignetteFlash"></div>
+        <div id="levelBanner">
+          <p id="bannerSub">LEVEL 1</p>
+          <h2 id="bannerTitle">DIVE IN!</h2>
+        </div>
+        <div id="errBox"></div>
+        <!-- portrait phones: turn sideways to play -->
+        <div class="overlay hidden" id="rotate">
+          <div class="card">
+            <div style="font-size: 52px">🔄</div>
+            <h2>Turn your phone sideways</h2>
+            <p>Sideways = big reef, easy buttons.</p>
+          </div>
+        </div>
+        <div id="touchNav">
+          <button class="navbtn" id="navUp">▲</button><button class="navbtn" id="navDown">▼</button>
+        </div>
+        <div id="boostWrap">
+          <button id="boostBtn" title="Boost (Shift)">⚡</button>
+          <div id="boostBar"><div id="boostFill"></div></div>
+        </div>
+
+        <div id="installBanner" class="hidden">
+          <img src="assets/icon-192.png" alt="Nemo Dash icon" />
+          <div class="ib-text">
+            <b>Nemo Dash <span class="ib-badge">Installable App</span></b>
+            <small>Home-screen icon • fullscreen • offline play</small>
+          </div>
+          <button id="btnInstallTop">⬇ Install App</button>
+          <button id="btnInstallX" aria-label="Dismiss">×</button>
+        </div>
+
+        <div class="hud" id="gameHud" style="display: none">
+          <div class="pill">🌊 LV <span id="hudLevel">1</span></div>
+          <div class="pill">
+            ⭐ <span id="hudScore">0</span> <small>BEST <span id="hudBest">0</span></small>
+          </div>
+          <div id="progressWrap">
+            <div id="progressBar"></div>
+            <div id="progressFish">🐠</div>
+          </div>
+          <div class="pill" id="hpPill">
+            ❤ HP
+            <div id="hpWrap"><div id="hpBar"></div></div>
+            <span id="hearts">❤❤❤</span>
+          </div>
+          <div class="pill">🦪 <span id="hudPearls">0</span></div>
+          <div class="pill">💎 <span id="hudGems">0</span></div>
+          <button class="iconbtn" id="btnMute" title="Sound (M)">🔊</button>
+          <button class="iconbtn" id="btnPause" title="Pause (P)">⏸</button>
+        </div>
+
+        <div id="toast"><div id="combo">COMBO x2 🔥</div></div>
+        <div id="hint" style="display: none">
+          ▲ ▼ move &nbsp;•&nbsp; SHIFT fast &nbsp;•&nbsp; red ! = swim away!
+        </div>
+
+        <!-- MENU -->
+        <div class="overlay" id="menu">
+          <div class="card wide">
+            <img src="assets/logo.svg" class="gamelogo" alt="Nemo Dash — Coral Escape" />
+            <div id="gemBar">💎 <span id="menuGems">0</span></div>
+            <p id="menuBest">⭐ Best: 0</p>
+            <div class="row">
+              <button class="btn secondary hidden" id="btnInstall">📲 INSTALL APP</button>
+            </div>
+            <div id="roster"></div>
+            <div class="row">
+              <button class="btn" id="btnPlay">▶ &nbsp;SWIM</button>
+              <button class="btn secondary" id="btnLevels">🌊 REEFS</button>
+              <button class="btn secondary" id="btnEndless">∞ ENDLESS</button>
+              <button class="btn secondary" id="btnHow">?</button>
+            </div>
+            <p id="endlessLock">🏆 Clear Level 5 to unlock Endless Reef</p>
+            <p class="ver">v<span id="verNum">?</span> • sound on for the full reef 🔊</p>
+          </div>
+        </div>
+
+        <!-- LEVELS -->
+        <div class="overlay hidden" id="levels">
+          <div class="card wide">
+            <div class="tag blue">🌊 CHOOSE YOUR REEF</div>
+            <h2 id="levelsTitle">Reefs</h2>
+            <div id="levelGrid"></div>
+            <div class="row"><button class="btn secondary" id="btnLevelsBack">← Back</button></div>
+          </div>
+        </div>
+
+        <!-- iOS INSTALL GUIDE (iPhones have no auto-install button — Apple rules) -->
+        <div class="overlay hidden" id="iosGuide">
+          <div class="card">
+            <div class="tag blue">📲 PUT IT ON YOUR HOME SCREEN</div>
+            <h2>Install in 10 seconds</h2>
+            <p style="text-align: left">
+              <b>Android:</b> tap <b>⋮</b> (top-right) → <b>Add to Home screen</b> →
+              <b>Install</b>.<br /><br />
+              <b>iPhone:</b> tap <b>Share</b> (square with ⬆️) → <b>Add to Home Screen</b> →
+              <b>Add</b>.<br /><br />
+              Then open Nemo Dash from your home screen: fullscreen, offline, with sound. 🐠<br />
+              <span style="opacity: 0.65; font-size: 12px"
+                >Tip: one-tap auto-install appears once the game is hosted on https.</span
+              >
+            </p>
+            <div class="row"><button class="btn" id="btnIosBack">GOT IT</button></div>
+          </div>
+        </div>
+
+        <!-- HOW -->
+        <div class="overlay hidden" id="how">
+          <div class="card">
+            <div class="tag blue">SURVIVAL GUIDE</div>
+            <h2>How to survive the reef</h2>
+            <p style="text-align: left">
+              🐟 <b>You auto-swim forward.</b> You only steer <b>UP / DOWN</b> — the current does
+              the rest.<br /><br />
+              🦈 <b>Big fish</b> swim right → left. Only their <b>teeth</b> can eat you — a bump on
+              their side just hurts a little. Red <b>!</b> = swim away fast!<br />
+              🪼 <b>Jellies</b> pulse up &amp; down. 🦀 <b>Crabs</b> snap on the seabed — don't hug
+              the floor.<br />
+              🎣 <b>Nets drop from boats</b> (watch the shadow + splash warning!) and
+              <b>hooks</b> dangle. Touch a falling net and it
+              <b>catches you and drags you down — the landing ends the run</b>. Only a shield can
+              break you free.<br />
+              🌀 <b>Teal current bands</b> push you — ride or fight them.<br />
+              🦪 Pearls = +25. 😱 Near-miss = +15 × combo. 🛡️ Shield bubble saves you once — even
+              from a bite.<br /><br />
+              ❤ <b>Health board:</b> jellies, hooks &amp; claws cost <b>1 HP</b>. But if a
+              <b>bigger fish engulfs you — instant game over!</b> (Bigger unlocked fish devour
+              smaller ones instead.)<br />
+              ⚡ <b>Boost</b> (⚡ button, or hold <kbd>SHIFT</kbd> / <kbd>SPACE</kbd>): swim 1.75×
+              faster to escape — the tank drains and refills on its own.<br />
+              🐟 Munch silver fry (+15). 🏁 Clear levels for 💎 gems to unlock bigger fish.<br />
+              👑 Clear Level 5 to open the ∞ Endless Reef score chase.
+            </p>
+            <div class="row"><button class="btn" id="btnHowBack">GOT IT — LET'S GO</button></div>
+          </div>
+        </div>
+
+        <!-- LEVEL COMPLETE -->
+        <div class="overlay hidden" id="levelDone">
+          <div class="card">
+            <div class="tag">✅ LEVEL <span id="doneLevel">1</span> CLEARED!</div>
+            <h2 id="doneTitle">You reached the Coral Gate! 🪸</h2>
+            <div class="stats">
+              <div class="stat"><b id="doneScore">0</b><span>SCORE</span></div>
+              <div class="stat"><b id="donePearls">0</b><span>PEARLS 🦪</span></div>
+              <div class="stat"><b id="doneEaten">0</b><span>EATEN 🐟</span></div>
+              <div class="stat"><b id="doneNear">0</b><span>NEAR-MISS</span></div>
+            </div>
+            <p id="doneGems">+0 💎</p>
+            <p id="doneFlavor">The reef gets darker ahead… predators smell you now.</p>
+            <div class="row">
+              <button class="btn" id="btnNext">NEXT REEF ▶</button>
+              <button class="btn secondary" id="btnReplay">Replay</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- GAME OVER -->
+        <div class="overlay hidden" id="gameOver">
+          <div class="card">
+            <div class="tag gold">💀 CAUGHT IN THE REEF</div>
+            <h2 id="overTitle">Nemo got nibbled!</h2>
+            <div class="stats">
+              <div class="stat"><b id="overScore">0</b><span>SCORE</span></div>
+              <div class="stat"><b id="overLevel">1</b><span>LEVEL</span></div>
+              <div class="stat"><b id="overBest">0</b><span>BEST ⭐</span></div>
+            </div>
+            <p id="overTip">
+              Tip: stay mid-water, watch net shadows, and use near-misses for combo points.
+            </p>
+            <div class="row">
+              <button class="btn warn" id="btnRetry">↻ &nbsp;TRY AGAIN</button>
+              <button class="btn secondary" id="btnMenu">Menu</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- PAUSE -->
+        <div class="overlay hidden" id="paused">
+          <div class="card">
+            <div class="tag blue">⏸ PAUSED</div>
+            <h2>Take a breath…</h2>
+            <p id="pauseBests">⭐ Best reef: 0 • Endless: 0</p>
+            <div class="row">
+              <button class="btn" id="btnResume">RESUME</button>
+              <button class="btn secondary" id="btnRestart2">↻ Restart</button>
+            </div>
+            <div class="row">
+              <button class="btn secondary" id="btnSound2">🔊 Sound: on</button>
+            </div>
+            <div class="row">
+              <button class="btn secondary" id="btnQuit">Quit to menu</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="js/utils.js?v=2.1"></script>
+    <script src="js/audio.js?v=2.1"></script>
+    <script src="js/data.js?v=2.1"></script>
+    <script src="js/state.js?v=2.1"></script>
+    <script src="js/world.js?v=2.1"></script>
+    <script src="js/flow.js?v=2.1"></script>
+    <script src="js/update.js?v=2.1"></script>
+    <script src="js/render.js?v=2.1"></script>
+    <script src="js/ui.js?v=2.1"></script>
+  </body>
+</html>
