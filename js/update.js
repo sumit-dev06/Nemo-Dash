@@ -110,7 +110,13 @@ function update(dt, rawDt) {
     for (const q of parts) {
       q.x += q.vx * dt;
       q.y += q.vy * dt;
-      q.vy += 180 * dt * 0.3;
+      if (q.kind === 'blood') {
+        q.vx *= 1 - 1.9 * dt;
+        q.vy = q.vy * (1 - 1.9 * dt) - 14 * dt;
+        q.r += (q.grow || 10) * dt;
+      } else {
+        q.vy += 180 * dt * 0.3;
+      }
       q.life -= dt;
     }
     parts = parts.filter((q) => q.life > 0);
@@ -451,7 +457,14 @@ function update(dt, rawDt) {
   for (const q of parts) {
     q.x += q.vx * dt;
     q.y += q.vy * dt;
-    q.vy += 180 * dt * 0.3;
+    if (q.kind === 'blood') {
+      // blood hangs in the water: heavy drag, faint rise, keeps blooming
+      q.vx *= 1 - 1.9 * dt;
+      q.vy = q.vy * (1 - 1.9 * dt) - 14 * dt;
+      q.r += (q.grow || 10) * dt;
+    } else {
+      q.vy += 180 * dt * 0.3;
+    }
     q.life -= dt;
   }
   parts = parts.filter((q) => q.life > 0);

@@ -297,8 +297,8 @@ function triggerDeath(reason) {
       engulfT = 0;
       if (state === 'playing' && player.dead) AudioSys.engulf();
     }, 250);
-    burst(player.x, player.y, 60, '#ff5e62');
-    burst(player.x, player.y, 25, '#ffd66e');
+    blood(player.x, player.y, 34, 1.7); // big fish swallows you — big plume
+    burst(player.x, player.y, 12, '#ffd66e'); // impact flash only, blood does the rest
     addFloat(player.x, player.y - 46, 'Got you!', '#ff5e62');
     banner('A BIG FISH', 'IT GOT YOU!');
   } else if (reason === 'net') {

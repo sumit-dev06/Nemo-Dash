@@ -230,13 +230,26 @@ function render() {
     ctx.fill();
   }
 
-  // 14) particles
+  // 14) particles (blood renders as soft dissolving plumes, rest as sparks)
   for (const q of parts) {
-    ctx.globalAlpha = clamp(q.life / q.max, 0, 1);
-    ctx.fillStyle = q.color;
-    ctx.beginPath();
-    ctx.arc(q.x, q.y, q.r, 0, TAU);
-    ctx.fill();
+    const a = clamp(q.life / q.max, 0, 1);
+    if (q.kind === 'blood') {
+      ctx.globalAlpha = a * 0.4;
+      ctx.fillStyle = q.color;
+      ctx.beginPath();
+      ctx.arc(q.x, q.y, q.r, 0, TAU);
+      ctx.fill();
+      ctx.globalAlpha = a * 0.75;
+      ctx.beginPath();
+      ctx.arc(q.x, q.y, q.r * 0.55, 0, TAU);
+      ctx.fill();
+    } else {
+      ctx.globalAlpha = a;
+      ctx.fillStyle = q.color;
+      ctx.beginPath();
+      ctx.arc(q.x, q.y, q.r, 0, TAU);
+      ctx.fill();
+    }
   }
   ctx.globalAlpha = 1;
 

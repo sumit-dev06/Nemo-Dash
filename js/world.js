@@ -151,6 +151,28 @@ function burst(x, y, n, color) {
       color,
     });
 }
+// Real underwater blood: dark red plume that blooms, hangs, drifts with the
+// current and dissolves — not hard dots. kind:'blood' grows + drags (see
+// update.js) and renders soft (see render.js). Cheap: plain arcs, no gradients.
+function blood(x, y, n, scale) {
+  const s = scale || 1;
+  const shades = ['#7a0000', '#a41313', '#c1121f', '#e63946', '#ff5e62'];
+  for (let i = 0; i < n; i++) {
+    const life = rand(0.9, 1.7);
+    parts.push({
+      kind: 'blood',
+      x: x + rand(-8, 8) * s,
+      y: y + rand(-8, 8) * s,
+      vx: rand(-150, 50) * s,
+      vy: rand(-80, 50) * s,
+      life,
+      max: life,
+      r: rand(2.5, 5.5) * s,
+      grow: rand(7, 16) * s,
+      color: shades[(Math.random() * shades.length) | 0],
+    });
+  }
+}
 // small canvas-only popup (no big DOM words — keeps the screen clean)
 function addFloat(x, y, txt, color) {
   if (!txt) return;
@@ -183,20 +205,8 @@ function eatFish(x, y, pts, label) {
   eaten++;
   eatenPts += pts;
   AudioSys.gulp();
-  burst(x, y, 14, '#ffe9a8');
-  burst(x, y, 8, '#7dffc4');
-  // red blood cloud: drifts with the current, hangs, fades
-  for (let i = 0; i < 10; i++)
-    parts.push({
-      x: x + rand(-8, 8),
-      y: y + rand(-8, 8),
-      vx: rand(-160, -30),
-      vy: rand(-70, 10),
-      life: rand(0.6, 1.3),
-      max: 1.3,
-      r: rand(2.5, 5.5),
-      color: i % 2 ? '#c1121f' : '#ff5e62',
-    });
+  burst(x, y, 10, '#ffe9a8');
+  blood(x, y, 14, 1); // prey bleeds where it died — cloudy plume, not dots
   addFloat(x, y - 20, label ? label + ' +' + pts : '', '#7dffc4');
   shake = Math.max(shake, 3);
 }
