@@ -356,7 +356,7 @@ function updatePlayBtn() {
 }
 
 // ---------- fish roster: unlock bigger fish with gems; bigger fish eat smaller ones ----------
-const VERSION = '2.6';
+const VERSION = '2.7';
 const FISHES = [
   {
     id: 'nemo',
