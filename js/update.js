@@ -104,11 +104,40 @@ function update(dt, rawDt) {
     }
   }
 
-  // --- death cinematic: world drifts on, Nemo shrinks/fades, then the panel ---
+  // --- death cinematic: world drifts on, the kill plays out, then the panel ---
   if (player.dead) {
     player.deathT -= rawDt;
+    const feeding = player.deadReason === 'bite' && player.eatenBy;
+    if (feeding) player.feedT += rawDt;
+    const SNAP_AT = 0.38; // jaws shut this many seconds after the grab
     for (const p of predators) {
       p.ph += dt * p.wob * 2;
+      if (feeding && p === player.eatenBy) {
+        if (!player.snapDone) {
+          // RUN-DOWN: jaws gaping wider, darting onto the grabbed victim
+          p.mouth = Math.min(1, p.mouth + rawDt * 5);
+          const tx = player.catchX + p.size * 0.3; // put the mouth on the victim
+          const ty = player.catchY;
+          const k = 1 - Math.exp(-9 * dt);
+          p.x += (tx - p.x) * k;
+          p.y += (ty - p.y) * k;
+          player.tail += dt * 30; // victim thrashing
+          if (player.feedT >= SNAP_AT) {
+            // SNAP: jaws shut on the victim — chomp, shake, blood, gone
+            player.snapDone = true;
+            AudioSys.chomp();
+            shake = Math.max(shake, 16);
+            blood(player.catchX, player.catchY, 26, 1.5);
+            burst(player.catchX, player.catchY, 10, '#ffd66e');
+            addFloat(player.catchX, player.catchY - 46, 'Got you!', '#ff5e62');
+          }
+        } else {
+          // SWALLOW: jaws closing, killer drifts off slowly with the meal
+          p.mouth = Math.max(0, p.mouth - rawDt * 1.8);
+          p.x += p.vx * dt * 0.15;
+        }
+        continue;
+      }
       p.x += p.vx * dt * 0.3;
     }
     for (const q of parts) {
@@ -141,6 +170,22 @@ function update(dt, rawDt) {
   let ay = 0;
   if (input.up) ay -= ACC;
   if (input.down) ay += ACC;
+  // phone joystick: critically-damped follow of the thumb (kills jitter) +
+  // analog curve (gentle near center, full power at the rim). Desktop targets
+  // sit at 0 forever, so keyboard physics is bit-identical to before.
+  const sk = 1 - Math.exp(-14 * dt);
+  input.joyX += ((input.joyTX || 0) - input.joyX) * sk;
+  input.joyY += ((input.joyTY || 0) - input.joyY) * sk;
+  if (Math.abs(input.joyX) < 0.02) input.joyX = 0;
+  if (Math.abs(input.joyY) < 0.02) input.joyY = 0;
+  const jx = Math.sign(input.joyX) * Math.pow(Math.abs(input.joyX), 1.35);
+  const jy = Math.sign(input.joyY) * Math.pow(Math.abs(input.joyY), 1.35);
+  ay += jy * ACC; // joystick steers like the keys
+  // joystick right = surge forward toward 170+jx*120; released = eases back
+  // to 170, so x never drifts (left half is already zeroed at input).
+  const targetX = 170 + Math.max(0, jx) * 120;
+  player.x += (targetX - player.x) * (1 - Math.exp(-6 * dt));
+  player.x = clamp(player.x, 100, Math.max(200, W - 120));
   if (input.pointerActive) {
     const dy = input.pointerY - player.y;
     ay += dy * 16 - player.vy * 3.2; // spring-damper => laggy underwater feel
@@ -301,8 +346,14 @@ function update(dt, rawDt) {
     }
     if (player.invuln <= 0 && !player.dead) {
       const rr = p.size * 0.32;
-      // MOUTH (front of the hunter, faces left): teeth kill
-      const touchMouth = circleHit(px, py, player.r * 0.8, p.x - p.size * 0.3, p.y, rr * 0.95);
+      // MOUTH (front of the hunter, faces left): teeth kill ONLY on a frontal
+      // bite — the victim must be level with the jaws and ahead of the hunter.
+      // Brushing past above/below, or touching the hunter from behind, just
+      // bruises (body rule below) — it never eats you.
+      const mouthDY = Math.abs(py - p.y);
+      const frontal = px < p.x + p.size * 0.05 && mouthDY < rr * 0.62;
+      const touchMouth =
+        frontal && circleHit(px, py, player.r * 0.8, p.x - p.size * 0.3, p.y, rr * 0.95);
       // BODY (middle + tail): a bump only bruises — gentle 1 HP, never death
       const touchBody =
         !touchMouth && circleHit(px, py, player.r * 0.85, p.x + p.size * 0.1, p.y, rr * 1.05);
@@ -312,7 +363,7 @@ function update(dt, rawDt) {
           p.dead = true;
           p.counted = true;
           eatFish(p.x, p.y, 50, '');
-        } else if (touchMouth) engulfBy();
+        } else if (touchMouth) engulfBy(p);
         else damage('graze', p.x, p.y, true);
       }
     }

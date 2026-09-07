@@ -236,31 +236,57 @@ document.getElementById('btnQuit').onclick = () => {
   show('menu');
 };
 
-// ---------- touch navigation buttons (phones) ----------
+// ---------- touch joystick (phones, left side) ----------
+// Drag anywhere on the stick: up/down steers, right surges forward.
+// Left half is ignored on purpose — the fish never swims backwards.
 function setupTouchNav() {
   const nav = document.getElementById('touchNav');
   if ('ontouchstart' in window || navigator.maxTouchPoints > 0) nav.classList.add('show');
-  const bind = (id, dir) => {
-    const b = document.getElementById(id);
-    const on = (e) => {
+  const jz = document.getElementById('joyZone');
+  const knob = document.getElementById('joyKnob');
+  const R = 34; // max knob travel, px
+  const setKnob = (dx, dy) => {
+    if (knob) knob.style.transform = 'translate(calc(-50% + ' + dx * R + 'px), calc(-50% + ' + dy * R + 'px))';
+  };
+  const reset = () => {
+    input.joyTX = 0;
+    input.joyTY = 0;
+    input.joyX = 0;
+    input.joyY = 0;
+    setKnob(0, 0);
+  };
+  if (jz) {
+    const move = (e) => {
       e.preventDefault();
       AudioSys.ensure();
-      input[dir] = true;
+      const r = jz.getBoundingClientRect();
+      let dx = (e.clientX - (r.left + r.width / 2)) / R;
+      let dy = (e.clientY - (r.top + r.height / 2)) / R;
+      const m = Math.hypot(dx, dy);
+      if (m > 1) {
+        dx /= m;
+        dy /= m;
+      }
+      if (Math.hypot(dx, dy) < 0.12) {
+        dx = 0;
+        dy = 0; // dead zone so the fish rests when the thumb does
+      }
+      input.joyTX = Math.max(0, dx); // right only — never backwards
+      input.joyTY = dy;
+      setKnob(dx, dy);
     };
-    const off = (e) => {
-      if (e) e.preventDefault();
-      input[dir] = false;
-    };
-    b.addEventListener('pointerdown', on);
-    b.addEventListener('pointerup', off);
-    b.addEventListener('pointercancel', off);
-    b.addEventListener('pointerleave', off);
-    b.addEventListener('touchstart', on, { passive: false });
-    b.addEventListener('touchend', off);
-    b.addEventListener('touchcancel', off);
-  };
-  bind('navUp', 'up');
-  bind('navDown', 'down');
+    jz.addEventListener('pointerdown', (e) => {
+      try {
+        jz.setPointerCapture(e.pointerId);
+      } catch (err) {}
+      move(e);
+    });
+    jz.addEventListener('pointermove', (e) => {
+      if (e.buttons > 0) move(e);
+    });
+    jz.addEventListener('pointerup', reset);
+    jz.addEventListener('pointercancel', reset);
+  }
   // boost button: tap toggles the burst. Pointer events ONLY — binding touchstart
   // too would fire twice per tap (toggle on, then straight back off).
   const bb = document.getElementById('boostBtn');

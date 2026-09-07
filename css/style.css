@@ -425,7 +425,7 @@ kbd {
 #stage {
   touch-action: none;
 }
-/* ---- touch navigation buttons (phones): UP left, DOWN right, BOOST above DOWN ---- */
+/* ---- touch joystick (phones, left side) + BOOST (right side) ---- */
 #touchNav {
   position: absolute;
   left: 26px;
@@ -434,34 +434,58 @@ kbd {
   z-index: 7;
   display: none;
   flex-direction: row;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: flex-end;
   pointer-events: none;
 }
 #touchNav.show {
   display: flex;
 }
-#touchNav .navbtn {
+#joyZone {
   pointer-events: auto;
-}
-.navbtn {
-  width: 66px;
-  height: 66px;
+  position: relative;
+  width: 118px;
+  height: 118px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.4);
+  border: 2px solid rgba(255, 255, 255, 0.35);
   background: rgba(3, 25, 40, 0.55);
   backdrop-filter: blur(8px);
-  color: #eaf7ff;
-  font-size: 26px;
-  font-weight: 900;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 }
-.navbtn:active {
-  background: rgba(34, 200, 238, 0.55);
-  transform: scale(0.94);
+#joyZone::before {
+  content: '▲';
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: rgba(234, 247, 255, 0.5);
+}
+#joyZone::after {
+  content: '▶';
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: rgba(234, 247, 255, 0.5);
+}
+#joyKnob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(135deg, #3df5a6, #22c8ee);
+  box-shadow:
+    0 4px 16px rgba(34, 200, 238, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  touch-action: none;
 }
 /* ---- boost button + tank (right side, above DOWN; auto-refills) ---- */
 #boostWrap {
@@ -794,9 +818,13 @@ kbd {
   .fishCard {
     flex-basis: 112px;
   }
-  .navbtn {
-    width: 60px;
-    height: 60px;
+  #joyZone {
+    width: 104px;
+    height: 104px;
+  }
+  #joyKnob {
+    width: 48px;
+    height: 48px;
   }
 }
 /* short landscape screens (phones sideways): slim compact HUD that always fits */
@@ -986,7 +1014,7 @@ kbd {
 @media (pointer: coarse) {
   .pill,
   .iconbtn,
-  .navbtn,
+  #joyZone,
   #boostBtn {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
@@ -995,7 +1023,7 @@ kbd {
     background: rgba(3, 25, 40, 0.85);
   }
   .iconbtn,
-  .navbtn,
+  #joyZone,
   #boostBtn {
     background: rgba(3, 25, 40, 0.8);
   }

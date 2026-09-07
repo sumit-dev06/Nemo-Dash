@@ -56,6 +56,9 @@ function startLevel(n) {
   player.dead = false;
   player.deathT = 0;
   player.deadReason = '';
+  player.eatenBy = null;
+  player.feedT = 0;
+  player.snapDone = false;
   player.heartT = 0;
   seedDecor();
   if (typeof bakeBackground !== 'undefined') bakeBackground(); // cave darkness is baked
@@ -123,6 +126,9 @@ function startEndless() {
   player.dead = false;
   player.deathT = 0;
   player.deadReason = '';
+  player.eatenBy = null;
+  player.feedT = 0;
+  player.snapDone = false;
   player.heartT = 0;
   seedDecor();
   if (typeof bakeBackground !== 'undefined') bakeBackground();
@@ -292,7 +298,7 @@ function triggerDeath(reason) {
   flashA = 1;
   slowmo = reason === 'bite' ? 1.2 : 0.5;
   if (reason === 'bite') {
-    // chomp already snapped at the bite moment (engulfBy) — the roar follows a beat later
+    // the roar follows a beat after the grab
     // (cancelled if a new run starts first — see stopEndStings).
     try {
       if (engulfT) clearTimeout(engulfT);
@@ -301,9 +307,7 @@ function triggerDeath(reason) {
       engulfT = 0;
       if (state === 'playing' && player.dead) AudioSys.engulf();
     }, 250);
-    blood(player.x, player.y, 34, 1.7); // big fish swallows you — big plume
-    burst(player.x, player.y, 12, '#ffd66e'); // impact flash only, blood does the rest
-    addFloat(player.x, player.y - 46, 'Got you!', '#ff5e62');
+    // jaws are open and rushing in — the snap + blood land in the cinematic
     banner('A BIG FISH', 'IT GOT YOU!');
   } else if (reason === 'net') {
     AudioSys.trap();
@@ -326,9 +330,18 @@ function finishDeath() {
   gameOver(player.deadReason, false); // lose sting plays on every death panel
 }
 // Engulfed by a bigger fish = instant game over (shield still saves once).
-function engulfBy() {
+// The killer grabs you here; the jaw snap + blood land ~0.38s later in the
+// death cinematic, so you SEE the catch before the kill.
+function engulfBy(p) {
   if (player.invuln > 0 || player.dead || player.trappedIn || state !== 'playing') return;
   if (useShield()) return;
+  if (p) {
+    player.eatenBy = p;
+    player.catchX = player.x;
+    player.catchY = player.y;
+  }
+  player.feedT = 0;
+  player.snapDone = false;
   AudioSys.chomp();
   triggerDeath('bite');
 }

@@ -23,14 +23,15 @@ python3 -m http.server 8000
 |---|---|
 | `▲` / `▼` or `W` / `S` (hold) | Thrust up / down (water drag + buoyancy — feels weighty) |
 | Mouse / touch press + drag up-down | Fish springs toward your pointer with lag |
-| On-screen ▲▼ buttons | Phone navigation (auto-appear on touch devices) |
+| On-screen joystick (left, phones) | Steer up/down + push right to surge forward (never backwards) |
 | ⚡ button or hold `Shift` | Boost: 1.75× speed while the tank lasts (auto-refills) |
 | `M` / `P` or `Esc` | Mute / pause (`Enter` starts from menu) |
 
 ## Rules in 30 seconds
 
 - You have a **health board** ❤ (3–5 HP by fish) with a color bar. Jellies, hooks, claws = **−1 HP**.
-- **If a bigger fish touches you, it swallows you whole — instant game over** 🦈 (shield saves once).
+- **A bigger fish's frontal bite swallows you whole — instant game over** 🦈 (shield saves once).
+  Brushing past above/below or bumping its body only bruises (−1 HP).
   Hunters telegraph first: gaping jaws + red `!` + hiss → dodge the locked strike!
 - **Nets are a cage** 🎣 — touch a falling net and it drags you to the bottom; the landing ends the run (shield breaks you free).
 - **Eat or be eaten:** silver fry are snacks (+15, red blood cloud); big unlocked fish **devour smaller hunters (+50)**.

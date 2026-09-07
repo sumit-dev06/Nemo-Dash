@@ -56,6 +56,11 @@ const player = {
   dead: false,
   deathT: 0,
   deadReason: '',
+  eatenBy: null, // predator currently eating you (bite cinematic only)
+  catchX: 0, // where the jaws grabbed you
+  catchY: 0,
+  feedT: 0, // seconds since the grab (drives dart → snap → swallow)
+  snapDone: false, // jaws have shut — victim is gone, blood tells it
   heartT: 0,
   boost: 100, // boost tank 0–100: drains while bursting, refills at rest
   boosting: false,
@@ -66,7 +71,18 @@ const player = {
 // boost tuning: ~3.5s of burst per full tank, ~7s to refill from empty
 const BOOST = { mul: 1.75, drain: 28, fill: 14 };
 
-const input = { up: false, down: false, boostHeld: false, pointerActive: false, pointerY: H / 2 };
+const input = {
+  up: false,
+  down: false,
+  fwd: false, // keyboard surge (D / →); touch uses the joystick
+  joyTX: 0, // joystick raw targets from the thumb (ui writes these)
+  joyTY: 0,
+  joyX: 0, // smoothed values the physics actually uses (0 on desktop)
+  joyY: 0, // joystick -1..1 (up negative), replaces the old ▲▼ buttons
+  boostHeld: false,
+  pointerActive: false,
+  pointerY: H / 2,
+};
 
 // dynamic resolution: frame-time monitor that steps render scale down/up.
 // Pixels change, art never does — full quality whenever the device copes.

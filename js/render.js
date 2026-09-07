@@ -217,12 +217,26 @@ function render() {
   if (player.alive && !player.dead)
     drawPlayable(player.x, player.y, fish().size, player.tilt, player.tail);
   else if (player.dead && state === 'playing') {
-    // death cinematic: visibly shrinking + fading (being swallowed / exhausted)
-    const k = clamp(player.deathT / 1.5, 0.15, 1);
-    ctx.save();
-    ctx.globalAlpha = k;
-    drawPlayable(player.x, player.y, Math.max(0.2, fish().size * k), player.tilt, player.tail);
-    ctx.restore();
+    if (player.deadReason === 'bite' && player.eatenBy) {
+      if (!player.snapDone) {
+        // caught in the open jaws: full-size, thrashing — about to be snapped
+        drawPlayable(
+          player.catchX + rand(-2.5, 2.5),
+          player.catchY + rand(-2.5, 2.5),
+          fish().size,
+          player.tilt + rand(-0.12, 0.12),
+          player.tail,
+        );
+      }
+      // snapped shut: swallowed whole — nothing left to draw, blood tells it
+    } else {
+      // other deaths: visibly shrinking + fading (trapped / exhausted)
+      const k = clamp(player.deathT / 1.5, 0.15, 1);
+      ctx.save();
+      ctx.globalAlpha = k;
+      drawPlayable(player.x, player.y, Math.max(0.2, fish().size * k), player.tilt, player.tail);
+      ctx.restore();
+    }
   } else if (state === 'gameOver' && player.deadReason === 'hp') {
     // exhausted but still visible behind the panel — never vanishes mysteriously
     ctx.save();

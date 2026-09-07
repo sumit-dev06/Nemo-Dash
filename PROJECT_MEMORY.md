@@ -12,8 +12,11 @@
 
 - **Game:** NEMO DASH — Coral Escape. 2D underwater dodger, Canvas 960×540 (`FLOOR_Y = H-64`).
 - **Fantasy:** little clownfish (Nemo-like) crosses the reef left → right to a Coral Gate.
-- **Constraint from owner:** player motion is **UP/DOWN only** — forward swim is automatic
-  (world scrolls left, player x locked at ~170).
+- **Constraint from owner:** forward swim is automatic (world scrolls left, player x rests
+  at ~170). Touch phones steer with the **left joystick** (up/down + rightward surge,
+  left half ignored — never backwards); desktop steers with **keyboard only**
+  (unchanged). Surge eases x to `170+joyX*120` and back, so spawn fairness + the
+  no-drift lock hold.
 - **Non-negotiables:** water + physics must *feel real*; characters must look good;
   proper sound; highly engaging/addictive; **browser version tested first**, then decide Android vs browser-only.
 
@@ -31,12 +34,15 @@
    Verdict: Phaser **not necessary yet** — adopt it at the Android/content-scale gate (see `docs/ROADMAP.md`).
 6. **Addiction systems shipped:** near-miss combo, pearls, health board (3 HP) + shield, best-score persistence,
    screen shake + slow-mo hit feedback, floating score text, confetti, level banners.
-7. **Death rules (owner-locked, v1.1):** small hazards (jelly/net/hook/crab/slam) cost **1 HP**;
-   touch from **any bigger fish = instant engulf → game over** (shield still saves once).
-   Every death plays a slow-mo cinematic (Nemo shrinks/fades, banner + sting) so the fish never
-   "just vanishes" — root cause of the old ~184-pts complaint was 3 idle predator hits → `alive=false`
-   → render hid Nemo with only the panel as explanation. Fixed: Nemo is always drawn while a run is live
-   (gold glow + ▼ YOU tracker), plus HP bar, low-HP heartbeat, per-cause titles/sounds.
+7. **Death rules (owner-locked, v1.1; bite refined v2.7):** small hazards (jelly/net/hook/crab/slam) cost **1 HP**;
+    a **frontal bite** from a bigger fish (level with the jaws, ahead of it) = instant engulf → game over —
+    brushing past above/below or touching from behind only bruises (−1 HP soft).
+    Bigger unlocked fish devour smaller ones instead (might ladder). Shield still saves once.
+    Bite kill plays in 3 beats: jaws gape + dart onto the victim (0.38s, victim thrashing),
+    jaw snap (chomp + shake + blood plume, victim gone), swallow (jaws close, slow drift).
+    Every death plays slow-mo so the fish never "just vanishes" (the old ~184-pts complaint:
+    3 idle hits → `alive=false` → render hid Nemo). Fixed: Nemo is always drawn while a run is live
+    (gold glow + ▼ YOU tracker), plus HP bar, low-HP heartbeat, per-cause titles/sounds.
 8. **Roster + gems (owner-locked, v1.2):** 4 fish (Nemo 0💎 / Azure 4💎 / Puffy 10💎 / Razor 20💎),
    bigger = bigger body + more HP + eats smaller (might ladder, see `docs/GAME_DESIGN.md`).
    Gems from level clears only (no IAP yet). Persisted keys: `nemoGems`, `nemoFish`, `nemoSelected`.
