@@ -36,8 +36,12 @@ python3 -m http.server 8000
 - **Nets are a cage** 🎣 — touch a falling net and it drags you to the bottom; the landing ends the run (shield breaks you free).
 - **Eat or be eaten:** silver fry are snacks (+15, red blood cloud); big unlocked fish **devour smaller hunters (+50)**.
 - 🏁 Clear levels to bank **💎 gems** and unlock Azure → Puffy → Razor on the opening screen.
-- **10 hand-tuned reefs** (gentle start, breather L6, fierce L10) + **∞ Endless Reef**
+- **15 hand-tuned reefs** (gentle start, breather L6, fierce L10, dark cave L11–L15)
+  + **∞ Endless Reef** (easy start, full challenge by ~3.6km, cave past ~4.5km)
   score chase unlocked by clearing Level 5. 🌊 Reef-select replays anything you've cleared.
+- Late reefs run longer on purpose (~12s on L1 → ~26s on L15): speed climbs gently
+  while distance goals outpace it. Mid-reef help: a magnet at 45%, one heart past
+  the middle on reefs 4+ (never frequent).
 - 🦪 Pearl = **+25**. 😱 Near-miss = **+15 × combo** (combo window 2.5s).
 - Score = `floor(distance/10) + pearls*25 + nearMisses*15 + eatenPts` (+ live combo bonus).
 - Last ~420px before the gate is a **safe zone** — no new spawns, gate swims in from the right.

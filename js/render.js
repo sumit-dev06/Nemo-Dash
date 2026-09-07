@@ -529,6 +529,17 @@ function drawNemo(x, y, scale, tilt, tailPh) {
 
 // selected-fish dispatch: every owned fish swims the same water, looks its own self
 function drawPlayable(x, y, scale, tilt, tailPh) {
+  // gulp pulse: quick lunge + swell right after devouring prey (player.gulpT)
+  try {
+    if (player.gulpT > 0) {
+      const gp = Math.sin(((0.32 - player.gulpT) / 0.32) * Math.PI);
+      x += 7 * gp;
+      scale *= 1 + 0.13 * gp;
+    }
+  } catch (e) {}
+  // swim feel: whole body rocks gently + breathes (tails/fins already wag)
+  tilt += Math.sin(tailPh * 0.85) * 0.05;
+  scale *= 1 + Math.sin(tailPh * 0.8) * 0.02;
   if (selectedFish === 'damsel') drawTang(x, y, scale, tilt, tailPh);
   else if (selectedFish === 'puffer') drawPuffer(x, y, scale, tilt, tailPh);
   else if (selectedFish === 'shark') drawPlayShark(x, y, scale, tilt, tailPh);
@@ -801,6 +812,7 @@ function drawFry(f, dir) {
   ctx.save();
   ctx.translate(f.x, f.y);
   ctx.scale(dir, 1);
+  ctx.rotate(Math.sin(f.ph * 0.9) * 0.12); // fry wiggle their whole body
   ctx.fillStyle = 'rgba(0,0,0,0.15)';
   ctx.beginPath();
   ctx.ellipse(0, 5, 9, 2.5, 0, 0, TAU);
@@ -899,6 +911,7 @@ function drawPredator(p) {
   ctx.scale(dir, 1);
   const s = p.size / 110; // normalize
   ctx.scale(s, s);
+  ctx.rotate(Math.sin(p.ph * 0.9) * 0.045); // body rolls as it swims
   const swim = Math.sin(p.ph) * 6;
   if (p.type === 'shark') {
     // body
@@ -1326,7 +1339,7 @@ function drawPower(pw) {
   ctx.font = '16px Arial';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(pw.kind === 'shield' ? '🛡️' : pw.kind === 'magnet' ? '🧲' : '🌿', 0, 1);
+  ctx.fillText(pw.kind === 'shield' ? '🛡️' : pw.kind === 'magnet' ? '🧲' : pw.kind === 'heart' ? '❤️' : '🌿', 0, 1);
   ctx.restore();
 }
 function drawSeaweed(x, base, s) {

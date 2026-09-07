@@ -28,7 +28,7 @@ const LEVELS = [
   {
     name: 'Kelp Edge',
     goal: 2200,
-    speed: 180,
+    speed: 172,
     pred: 2.1,
     jelly: 4.5,
     net: 5.0,
@@ -44,8 +44,8 @@ const LEVELS = [
   },
   {
     name: 'Net Waters',
-    goal: 2400,
-    speed: 195,
+    goal: 2500,
+    speed: 180,
     pred: 1.9,
     jelly: 3.8,
     net: 4.2,
@@ -61,8 +61,8 @@ const LEVELS = [
   },
   {
     name: 'Deep Blue',
-    goal: 2600,
-    speed: 210,
+    goal: 2800,
+    speed: 188,
     pred: 1.7,
     jelly: 3.4,
     net: 3.8,
@@ -78,8 +78,8 @@ const LEVELS = [
   },
   {
     name: "Hunter's Ground",
-    goal: 2800,
-    speed: 225,
+    goal: 3100,
+    speed: 196,
     pred: 1.55,
     jelly: 3.2,
     net: 3.4,
@@ -95,8 +95,8 @@ const LEVELS = [
   },
   {
     name: 'Quiet Current',
-    goal: 2800,
-    speed: 218,
+    goal: 3000,
+    speed: 190,
     pred: 1.75,
     jelly: 3.6,
     net: 4.2,
@@ -112,8 +112,8 @@ const LEVELS = [
   },
   {
     name: 'Angler Deep',
-    goal: 3000,
-    speed: 238,
+    goal: 3400,
+    speed: 200,
     pred: 1.45,
     jelly: 3.0,
     net: 3.4,
@@ -129,8 +129,8 @@ const LEVELS = [
   },
   {
     name: 'Storm Surface',
-    goal: 3200,
-    speed: 252,
+    goal: 3800,
+    speed: 208,
     pred: 1.35,
     jelly: 2.8,
     net: 2.8,
@@ -146,8 +146,8 @@ const LEVELS = [
   },
   {
     name: 'The Gauntlet',
-    goal: 3400,
-    speed: 265,
+    goal: 4200,
+    speed: 215,
     pred: 1.2,
     jelly: 2.6,
     net: 2.8,
@@ -163,8 +163,8 @@ const LEVELS = [
   },
   {
     name: 'Leviathan Reef',
-    goal: 3600,
-    speed: 280,
+    goal: 4600,
+    speed: 222,
     pred: 1.1,
     jelly: 2.4,
     net: 2.6,
@@ -180,8 +180,8 @@ const LEVELS = [
   },
   {
     name: 'Cave Mouth',
-    goal: 3400,
-    speed: 272,
+    goal: 4600,
+    speed: 218,
     pred: 1.25,
     jelly: 2.6,
     net: 2.8,
@@ -198,8 +198,8 @@ const LEVELS = [
   },
   {
     name: 'Dark Descent',
-    goal: 3500,
-    speed: 278,
+    goal: 5000,
+    speed: 224,
     pred: 1.2,
     jelly: 2.5,
     net: 2.7,
@@ -216,8 +216,8 @@ const LEVELS = [
   },
   {
     name: 'Narrow Squeeze',
-    goal: 3600,
-    speed: 285,
+    goal: 5400,
+    speed: 230,
     pred: 1.15,
     jelly: 2.4,
     net: 2.6,
@@ -234,8 +234,8 @@ const LEVELS = [
   },
   {
     name: 'Abyssal Halls',
-    goal: 3700,
-    speed: 292,
+    goal: 5800,
+    speed: 236,
     pred: 1.1,
     jelly: 2.3,
     net: 2.5,
@@ -252,8 +252,8 @@ const LEVELS = [
   },
   {
     name: 'Heart of the Cave',
-    goal: 3800,
-    speed: 298,
+    goal: 6200,
+    speed: 242,
     pred: 1.05,
     jelly: 2.2,
     net: 2.4,
@@ -296,27 +296,31 @@ function levelConfig(n) {
   };
 }
 // Endless Reef: tier rises every 900m, all curves capped so runs stay fair, never impossible.
+// Gentle onboarding: tier 0 starts near L1–L2 calm and ramps to full challenge
+// by tier 4 (~3.6km) — easy to harder, never hard on arrival.
 // Deep tiers (4+) descend into the cave: darker + narrower as you swim further.
 function endlessCfg(dist) {
   const tier = Math.floor(Math.max(0, dist) / 900);
+  const ramp = Math.min(1, tier / 4); // 0 at the start → 1 by tier 4
+  const from = (easy, full) => easy + (full - easy) * ramp;
   const cave = tier < 4 ? 0 : Math.min(1, (tier - 3) / 3);
   return {
     n: '∞',
     name: cave > 0.5 ? 'Endless Cave' : 'Endless Reef',
     goal: Infinity,
-    speed: Math.min(300, 195 + tier * 9),
-    predEvery: Math.max(0.85, 1.9 - tier * 0.09),
-    jellyEvery: Math.max(1.8, 3.6 - tier * 0.16),
-    netEvery: Math.max(2.0, 3.8 - tier * 0.16),
-    hookEvery: Math.max(2.6, 4.6 - tier * 0.16),
+    speed: Math.min(300, from(170, 195) + tier * 9),
+    predEvery: Math.max(0.85, from(2.4, 1.9) - tier * 0.09),
+    jellyEvery: Math.max(1.8, from(4.5, 3.6) - tier * 0.16),
+    netEvery: Math.max(2.0, from(5.0, 3.8) - tier * 0.16),
+    hookEvery: Math.max(2.6, from(6.0, 4.6) - tier * 0.16),
     pearlEvery: 1.1,
     powerEvery: 8,
     fryEvery: 1.0,
     cur: Math.min(3, Math.floor(tier / 2)),
-    curStr: 180 + tier * 8,
-    hungry: Math.min(0.9, 0.4 + tier * 0.05),
-    sharkW: Math.min(0.3, 0.1 + tier * 0.02),
-    anglerW: Math.min(0.3, 0.1 + tier * 0.02),
+    curStr: from(150, 180) + tier * 8,
+    hungry: Math.min(0.9, from(0.25, 0.4) + tier * 0.05),
+    sharkW: Math.min(0.3, from(0.02, 0.1) + tier * 0.02),
+    anglerW: Math.min(0.3, from(0, 0.1) + tier * 0.02),
     first: 1.2,
     cave,
     predSpeedMul: 1 + tier * 0.03,
@@ -356,7 +360,7 @@ function updatePlayBtn() {
 }
 
 // ---------- fish roster: unlock bigger fish with gems; bigger fish eat smaller ones ----------
-const VERSION = '2.7';
+const VERSION = '2.8';
 const FISHES = [
   {
     id: 'nemo',

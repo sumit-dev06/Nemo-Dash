@@ -106,14 +106,25 @@
 - 10 levels (`LEVELS` table in `js/data.js`): L1 pure swim → L2 jellies/nets → L3 hooks/currents
   → L4 sharks → L5 peak+anglers → L6 breather → L7–L9 climb → L10 Leviathan (280 speed, fair caps).
   L5 clear opens endless (`nemoEndless`); final clear crowns (`nemoCrowned`); clears unlock next
-  (`nemoMaxLevel`). Endless tiers/900m to speed 300 max; endless death banks +1💎/600m.
-- 15 levels (v2.6): L11–L15 are the cave (Cave Mouth → Heart of the Cave, `cfg.cave`
-  0.35→1.0): darker baked water, rock roof + stalactites + glowworms, narrower swim
-  band (`swimTop/swimBot` in `js/utils.js`), spawns clamped to the band, speed ≤298,
-  intervals ≥~1s, predator mult capped 1.8. Endless tier 4+ descends into the cave
-  (`Endless Cave` past tier 5, re-bakes once per tier). Starfish beds on the seabed
-  everywhere (`starfish` in `seedDecor`, `drawStarfish`). Perf: bake-time gradients
-  only, ~30 extra arcs/frame, no per-frame allocations.
+  (`nemoMaxLevel`). Endless tiers/900m to speed 300 max, ramping from L1-calm at tier 0
+  to full challenge by tier 4; endless death banks +1💎/600m.
+- 15 levels (v2.6, retuned): L1 pure swim → L2 jellies/nets → L3 hooks/currents
+  → L4 sharks → L5 peak+anglers → L6 breather → L7–L9 climb → L10 Leviathan →
+  L11–L15 cave (Cave Mouth → Heart of the Cave, `cfg.cave` 0.35→1.0).
+  Pace grows with level on purpose: speed climbs gently (165→242) while goals
+  outpace it (2000→6200px), so runs stretch ~12s (L1) → ~26s (L15) — late reefs
+  feel longer, not just faster. Spawn intervals never below ~1s (always reactable);
+  predator mult capped 1.8.
+  L5 clear opens endless (`nemoEndless`); final clear crowns (`nemoCrowned`); clears unlock next
+  (`nemoMaxLevel`). Endless tiers/900m to speed 300 max, ramping from L1-calm at tier 0
+  to full challenge by tier 4; endless death banks +1💎/600m.
+  Help arrives mid-run: guaranteed magnet at 45% of every reef (+40% per endless tier),
+  one heart at 62% on reefs 4+ (65% of endless tiers 2+), random hearts ~1-in-8 drops
+  once reefs turn hard — never frequent. Hunters never swim backwards: strikes abort
+  if you surged past the jaws instead of lunging tail-first. Cave rendering: darker baked
+  water, rock roof + stalactites + glowworms, narrower band (`swimTop/swimBot`),
+  spawns clamped to the band; starfish beds everywhere (`drawStarfish`).
+  Perf rule: bake-time gradients only, ~30 extra arcs/frame, no per-frame allocations.
 - Vanish-proofing: finite watchdog; compat `rrPath`; `#errBox` trap (now with line numbers);
   tracker glow topmost; 70-assert headless suite incl. DOM-ID cross-check + full-cast/fuzz renders.
 - Known limits: art is stylized-procedural; no native APK (PWA install instead for now);

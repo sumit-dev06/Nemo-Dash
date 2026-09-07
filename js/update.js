@@ -79,8 +79,10 @@ function update(dt, rawDt) {
     // endless hardness climbs with distance, one tier per 900m (capped, always fair)
     const t = Math.floor(distance / 900);
     if (t !== cfg.tier) {
-      const wasCave = (cfg.cave || 0);
+      const wasCave = cfg.cave || 0;
       cfg = endlessCfg(distance);
+      midMagnet = false; // fresh tier, fresh mid-tier restock
+      midHeart = false;
       currents = [];
       for (let i = 0; i < cfg.cur; i++)
         currents.push({
@@ -212,6 +214,7 @@ function update(dt, rawDt) {
   player.tilt = lerp(player.tilt, clamp(player.vy / 900, -0.55, 0.55), 1 - Math.exp(-8 * dt));
   player.tail += dt * (9 + Math.abs(player.vy) / 70 + effSpeed / 90) * (player.boosting ? 1.8 : 1);
   if (player.invuln > 0) player.invuln -= dt;
+  if (player.gulpT > 0) player.gulpT -= rawDt;
   if (player.shield > 0) player.shield -= dt;
   if (player.magnet > 0) player.magnet -= dt;
   if (player.slow > 0) player.slow -= dt;
@@ -269,6 +272,30 @@ function update(dt, rawDt) {
       spawnT.power = cfg.powerEvery * rand(0.9, 1.3);
       spawnPower();
     }
+    // guaranteed mid-run gifts as reefs get harder: a magnet mid-reef for
+    // everyone, plus one heart past the middle on hard reefs (never frequent).
+    if (!endless && !safe) {
+      if (!midMagnet && distance >= cfg.goal * 0.45) {
+        midMagnet = true;
+        dropPower('magnet');
+      }
+      if (!midHeart && level >= 4 && distance >= cfg.goal * 0.62) {
+        midHeart = true;
+        dropPower('heart');
+      }
+    }
+    if (endless) {
+      // endless restocks per tier: magnet mid-tier, heart late-tier on deep tiers
+      const phase = distance - cfg.tier * 900;
+      if (!midMagnet && phase >= 360) {
+        midMagnet = true;
+        dropPower('magnet');
+      }
+      if (!midHeart && cfg.tier >= 2 && phase >= 585) {
+        midHeart = true;
+        dropPower('heart');
+      }
+    }
   } else if (!gate) {
     gate = { x: spawnX() + 70 };
   }
@@ -290,13 +317,20 @@ function update(dt, rawDt) {
       p.y += clamp((py - p.y) * 2.2, -110, 110) * dt;
       if (p.lunge <= 0) {
         // STRIKE — locked onto where you ARE this instant. Move and it misses.
+        // Hunters never swim backwards: if you surged past the jaws, the
+        // strike aborts instead of throwing the fish tail-first at you.
         const dx = px - p.x,
           dy = py - p.y,
           d = Math.hypot(dx, dy) || 1;
-        const sp = Math.max(300, cfg.speed * 1.7);
-        p.lx = (dx / d) * sp;
-        p.ly = (dy / d) * sp;
-        p.lunge = -0.42;
+        if (dx > -20) {
+          p.lunge = 0;
+          p.cool = rand(1.2, 2);
+        } else {
+          const sp = Math.max(300, cfg.speed * 1.7);
+          p.lx = Math.min((dx / d) * sp, -120); // always leftward, never back
+          p.ly = (dy / d) * sp;
+          p.lunge = -0.42;
+        }
       }
     } else if (p.lunge < 0) {
       // lunging along the locked line
@@ -502,6 +536,17 @@ function update(dt, rawDt) {
       if (pw.kind === 'slow') {
         player.slow = 7;
         addFloat(px, py - 34, 'Slow water! 🌿', '#7dffc4');
+      }
+      if (pw.kind === 'heart') {
+        if (player.hearts < player.maxHearts) {
+          player.hearts++;
+          AudioSys.heartbeat();
+          addFloat(px, py - 34, '+1 ❤', '#ff6b81');
+        } else {
+          score += 50;
+          addFloat(px, py - 34, 'Full hearts +50', '#ff6b81');
+        }
+        updateHud();
       }
       burst(pw.x, pw.y, 16, '#ffffff');
     }

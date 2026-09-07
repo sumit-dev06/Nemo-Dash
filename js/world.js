@@ -140,8 +140,29 @@ function spawnPearl() {
   });
 }
 function spawnPower() {
-  const kind = ['shield', 'magnet', 'slow'][(Math.random() * 3) | 0];
+  // hearts stay rare: ~1 in 8 random drops, only once reefs turn hard
+  let kind = ['shield', 'magnet', 'slow'][(Math.random() * 3) | 0];
+  if (allowsHeart() && Math.random() < 0.12) kind = 'heart';
   powers.push({ x: spawnX() - 60, y: rand(swimTop() + 20, Math.max(swimTop() + 40, swimBot() - 40)), kind, ph: 0, vx: -(cfg.speed * 0.8) });
+}
+// hearts appear only when it gets hard: reef 4+ (or deep endless)
+function allowsHeart() {
+  try {
+    if (typeof endless !== 'undefined' && endless) return distance > 1800;
+    return (typeof level !== 'undefined' ? level : 1) >= 4;
+  } catch (e) {
+    return false;
+  }
+}
+// guaranteed mid-run gift (magnet / heart): drops at a fixed swim-line position
+function dropPower(kind) {
+  powers.push({
+    x: spawnX() - 60,
+    y: (swimTop() + swimBot()) / 2 + rand(-30, 30),
+    kind,
+    ph: 0,
+    vx: -(cfg.speed * 0.8),
+  });
 }
 function spawnFry() {
   // school of small silver prey — free snacks for every fish, any size
@@ -225,6 +246,9 @@ function eatFish(x, y, pts, label) {
   eaten++;
   eatenPts += pts;
   AudioSys.gulp();
+  try {
+    player.gulpT = 0.32;
+  } catch (e) {} // eating pulse: lunge + swell on the eater
   burst(x, y, 10, '#ffe9a8');
   blood(x, y, 14, 1); // prey bleeds where it died — cloudy plume, not dots
   addFloat(x, y - 20, label ? label + ' +' + pts : '', '#7dffc4');

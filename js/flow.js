@@ -59,6 +59,9 @@ function startLevel(n) {
   player.eatenBy = null;
   player.feedT = 0;
   player.snapDone = false;
+  player.gulpT = 0;
+  midMagnet = false;
+  midHeart = false;
   player.heartT = 0;
   seedDecor();
   if (typeof bakeBackground !== 'undefined') bakeBackground(); // cave darkness is baked
@@ -129,6 +132,9 @@ function startEndless() {
   player.eatenBy = null;
   player.feedT = 0;
   player.snapDone = false;
+  player.gulpT = 0;
+  midMagnet = false;
+  midHeart = false;
   player.heartT = 0;
   seedDecor();
   if (typeof bakeBackground !== 'undefined') bakeBackground();

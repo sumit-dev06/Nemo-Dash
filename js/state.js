@@ -30,6 +30,8 @@ let predators = [],
   currents = [],
   fries = [];
 let spawnT = { pred: 1, jelly: 2.5, net: 3, hook: 4, pearl: 0.5, power: 7, fry: 1 };
+let midMagnet = false, // guaranteed mid-run magnet drop (once per reef / endless tier)
+  midHeart = false; // guaranteed mid-run heart drop (harder reefs only, never frequent)
 let gate = null;
 let seaweeds = [],
   corals = [],
@@ -65,6 +67,7 @@ const player = {
   boost: 100, // boost tank 0–100: drains while bursting, refills at rest
   boosting: false,
   boostToggle: false, // phone ⚡ button toggles; keyboard Shift holds
+  gulpT: 0, // eating pulse timer (set on devour, counts down in update)
   trappedIn: null, // net cage currently dragging you down (null = free)
 };
 
