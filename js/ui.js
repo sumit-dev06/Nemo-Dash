@@ -123,6 +123,37 @@ function refreshPauseCard() {
 function updateSoundBtn() {
   const b = document.getElementById('btnSound2');
   if (b) b.textContent = AudioSys.muted ? '🔇 Sound: off' : '🔊 Sound: on';
+  // slider positions always mirror the persisted volumes (pause re-opens, reloads)
+  const vm = document.getElementById('volMus'),
+    vmV = document.getElementById('volMusV'),
+    vs = document.getElementById('volSfx'),
+    vsV = document.getElementById('volSfxV');
+  if (vm) vm.value = Math.round((AudioSys.musVol ?? 0.55) * 100);
+  if (vmV) vmV.textContent = Math.round((AudioSys.musVol ?? 0.55) * 100);
+  if (vs) vs.value = Math.round((AudioSys.sfxVol ?? 1) * 100);
+  if (vsV) vsV.textContent = Math.round((AudioSys.sfxVol ?? 1) * 100);
+}
+let _volWired = false;
+function wireVolSliders() {
+  if (_volWired) return;
+  _volWired = true;
+  const vm = document.getElementById('volMus'),
+    vmV = document.getElementById('volMusV'),
+    vs = document.getElementById('volSfx'),
+    vsV = document.getElementById('volSfxV');
+  if (vm)
+    vm.oninput = () => {
+      AudioSys.ensure();
+      AudioSys.setMusicVol(vm.value / 100);
+      if (vmV) vmV.textContent = vm.value;
+    };
+  if (vs)
+    vs.oninput = () => {
+      AudioSys.ensure();
+      AudioSys.setSfxVol(vs.value / 100);
+      if (vsV) vsV.textContent = vs.value;
+      AudioSys.coin(); // audible preview of the effects level
+    };
 }
 document.getElementById('btnMute').onclick = () => {
   toggleMute();
@@ -247,6 +278,7 @@ document.getElementById('btnSound2').onclick = () => {
   toggleMute();
   updateSoundBtn();
 };
+wireVolSliders();
 document.getElementById('btnQuit').onclick = () => {
   AudioSys.click();
   state = 'menu';
@@ -293,6 +325,8 @@ function setupTouchNav() {
     input.joyTX = 0;
     input.joyTY = 0;
     setKnob(0, 0);
+    // thumb off: stick fades back in (it hides while held so it never covers Nemo)
+    if (jz) jz.classList.remove('joy-hide');
   };
   window.joyReset = reset; // pause / blur / state changes must be able to let go
   if (jz) {
@@ -327,6 +361,9 @@ function setupTouchNav() {
       input.joyTX = 0;
       input.joyTY = 0;
       setKnob(0, 0);
+      // thumb down: hide the pad visuals (opacity only — stays touchable, so the
+      // drag never breaks). The ring + knob sat over Nemo on small screens.
+      jz.classList.add('joy-hide');
       try {
         jz.setPointerCapture(e.pointerId);
       } catch (err) {}

@@ -146,6 +146,7 @@ function metaOverlay(id, title) {
 function renderUpgrades() {
   const o = metaOverlay('ovUpg', '⬆️ UPGRADES & 🎯 MISSIONS');
   const b = document.getElementById('ovUpgBody');
+  if (!b) return;
   let h = '<div class="menu-sub">💎 ' + gems + ' gems</div><div id="upgGrid">';
   for (const u of UPG) {
     const l = upgLvl(u.id);
@@ -187,6 +188,7 @@ function renderUpgrades() {
 function renderAtlas() {
   const o = metaOverlay('ovAtlas', '📖 SPECIES ATLAS');
   const b = document.getElementById('ovAtlasBody');
+  if (!b) return;
   let h = '<div class="menu-sub">' + _seen.length + '/' + ATLAS.length + ' discovered — play to unlock</div><div id="upgGrid">';
   for (const a of ATLAS) {
     const got = _seen.includes(a.id) || _seen.includes('bio-' + a.id);
@@ -198,6 +200,7 @@ function renderAtlas() {
 function renderDaily() {
   const o = metaOverlay('ovDaily', '🏆 DAILY LEADERS — ' + _today());
   const b = document.getElementById('ovDailyBody');
+  if (!b) return;
   const rows = dailyBoard();
   let h = '<div class="menu-sub">Your best today: <b>' + Math.max(score, dailyBest()) + '</b> — one board per day, bots seeded by date</div>';
   rows.forEach((r, i) => {
@@ -207,37 +210,54 @@ function renderDaily() {
   o.classList.remove('hidden');
 }
 function metaInit() {
-  if (!player.abilityCd) { player.abilityCd = 0; player.abilityT = 0; player.frenzy = 0; player.thorns = 0; }
-  const hud = document.getElementById('gameHud');
-  if (hud && !document.getElementById('abilityBtn')) {
-    const btn = document.createElement('button');
-    btn.id = 'abilityBtn';
-    btn.className = 'iconbtn';
-    btn.title = 'Ability (E)';
-    btn.textContent = '💨';
-    hud.insertBefore(btn, document.getElementById('btnMute'));
-    btn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); try { AudioSys.ensure(); } catch (x) {} Meta.tryAbility(); });
-  }
-  const row = document.querySelector('.menu-play-row');
-  if (row && !document.getElementById('btnUpg')) {
-    const mk = (id, txt, fn) => {
-      const x = document.createElement('button');
-      x.className = 'btn secondary';
-      x.id = id;
-      x.textContent = txt;
-      x.onclick = () => { try { AudioSys.ensure(); AudioSys.click(); } catch (e) {} fn(); };
-      row.appendChild(x);
-    };
-    mk('btnUpg', '⬆️ UPGRADES', renderUpgrades);
-    mk('btnAtlas', '📖 ATLAS', renderAtlas);
-    mk('btnDaily', '🏆 DAILY', renderDaily);
-    const bar = document.createElement('p');
-    bar.className = 'menu-sub';
-    bar.id = 'misBar';
-    row.parentElement.appendChild(bar);
-  }
-  window.addEventListener('keydown', (e) => {
-    if ((e.key === 'e' || e.key === 'E') && state === 'playing') Meta.tryAbility();
-  });
+  try {
+    if (!player.abilityCd) { player.abilityCd = 0; player.abilityT = 0; player.frenzy = 0; player.thorns = 0; }
+  } catch (e) {}
+  // ability button: append (never insertBefore — one missing sibling must not
+  // kill the whole init; a silent throw here was why the UI once never appeared)
+  try {
+    const hud = document.getElementById('gameHud');
+    if (hud && !document.getElementById('abilityBtn')) {
+      const btn = document.createElement('button');
+      btn.id = 'abilityBtn';
+      btn.className = 'iconbtn';
+      btn.title = 'Ability (E)';
+      btn.textContent = '💨';
+      hud.appendChild(btn);
+      btn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); try { AudioSys.ensure(); } catch (x) {} Meta.tryAbility(); });
+    }
+  } catch (e) {}
+  // own menu row — never crammed into the play row (overflow hid it on phones)
+  try {
+    if (Meta._row || document.getElementById('metaRow')) return;
+    const host = document.querySelector('.menu-left') || document.getElementById('stage');
+    if (host) {
+      const row = document.createElement('div');
+      row.className = 'row menu-meta-row';
+      row.id = 'metaRow';
+      const mk = (id, txt, fn) => {
+        const x = document.createElement('button');
+        x.className = 'btn secondary';
+        x.id = id;
+        x.textContent = txt;
+        x.onclick = () => { try { AudioSys.ensure(); AudioSys.click(); } catch (e) {} fn(); };
+        row.appendChild(x);
+      };
+      mk('btnUpg', '⬆️ UPGRADES & 🎯 MISSIONS', renderUpgrades);
+      mk('btnAtlas', '📖 SPECIES ATLAS', renderAtlas);
+      mk('btnDaily', '🏆 DAILY BOARD', renderDaily);
+      host.appendChild(row);
+      const bar = document.createElement('p');
+      bar.className = 'menu-sub';
+      bar.id = 'misBar';
+      host.appendChild(bar);
+      Meta._row = row;
+    }
+  } catch (e) {}
+  try {
+    window.addEventListener('keydown', (e) => {
+      if ((e.key === 'e' || e.key === 'E') && state === 'playing') Meta.tryAbility();
+    });
+  } catch (e) {}
 }
 try { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', metaInit); else metaInit(); } catch (e) {}

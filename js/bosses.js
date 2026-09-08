@@ -45,7 +45,7 @@ const BOSSES = {
     title: 'The Last Sunlit King',
     // a huge old tunny — the biggest fish in the bright reef, all fins and scars
     size: 150,
-    hp: 12.5, // seconds
+    hp: 10, // seconds
     body: ['#c8a06a', '#8a5a34', '#4a2a15'],
     eye: '#f6e8c8',
     accent: '#ffd66e',
@@ -56,7 +56,7 @@ const BOSSES = {
     title: 'Devourer of the Forest',
     // an eel that threads the kelp corridors — long, sinuous, comes from below
     size: 175,
-    hp: 14,
+    hp: 11,
     body: ['#3f7a4c', '#244a2c', '#122416'],
     eye: '#d8ffb0',
     accent: '#7dffb2',
@@ -67,7 +67,7 @@ const BOSSES = {
     title: 'Keeper of the Wreck',
     // a rigged trawler's ghost mouth — rust and chain, spills a cage-trail
     size: 185,
-    hp: 15,
+    hp: 12,
     body: ['#5b5f66', '#34383f', '#161a20'],
     eye: '#ff8c42',
     accent: '#ff8c42',
@@ -78,7 +78,7 @@ const BOSSES = {
     title: 'Mother of the Drift',
     // a giant bell that pulses, spawning a ring of jellies around you
     size: 165,
-    hp: 15,
+    hp: 12,
     body: ['#7a3f9e', '#4a256e', '#241040'],
     eye: '#ff9de2',
     accent: '#c77dff',
@@ -89,7 +89,7 @@ const BOSSES = {
     title: 'Serpent of the Rift',
     // a volcanic eel that heats the water and dives from the dark above
     size: 190,
-    hp: 16,
+    hp: 12.5,
     body: ['#8a3d1f', '#4a1e0e', '#1c0a05'],
     eye: '#ffb347',
     accent: '#ff7a3c',
@@ -100,7 +100,7 @@ const BOSSES = {
     title: 'What Lives Below',
     // the angler-lure shadow at the bottom of everything — a teleporting hunter
     size: 200,
-    hp: 18,
+    hp: 14,
     body: ['#2c3c52', '#16202e', '#080d14'],
     eye: '#5adcff',
     accent: '#5adcff',
@@ -155,6 +155,7 @@ const Boss = {
       x: W + 70,
       y: (top + bot) / 2,
       home: (top + bot) / 2,
+      ax: Math.max(320, W * 0.62), // arena anchor — every strike returns here
       vx: -cfg.speed * 0.7, // drifts in from the right, then holds
       vy: 0,
       size: spec.size,
@@ -256,20 +257,21 @@ const Boss = {
       return {};
     }
 
-    // ---- swimming hold: actively hunts — tracks your lane, presses closer ----
+    // ---- attack: holds an arena anchor, visibly tracks your lane ----
+    // The anchor keeps the boss ON screen (a lunge that walks off-screen was
+    // the old "standing there" bug: x never came back, y overshot the band).
     if (b.phase === 'attack') {
-      const enr = b.hp < b.hpMax * 0.35 ? 1.45 : 1; // enrage: faster + closer
-      b.home += clamp(py - b.home, -1, 1) * 90 * dt * enr;
+      const enr = b.hp < b.hpMax * 0.35 ? 1.5 : 1; // enrage: faster + tighter
+      if (b.ax == null) b.ax = Math.max(320, W * 0.62);
+      b.home += clamp(py - b.home, -1, 1) * 110 * dt * enr;
       b.home = clamp(b.home, top + 40, bot - 40);
-      b.y = b.home + Math.sin(b.t * 2.2) * 18;
-      const wantX = Math.max(300, W * 0.62) - (b.hpMax - b.hp) * 2.5;
-      b.x += clamp(wantX - b.x, -1, 1) * 60 * dt;
+      b.x += clamp(b.ax - b.x, -1, 1) * 150 * dt; // always comes back home
+      b.y = b.home + Math.sin(b.t * 2.4) * 14;
       b.attack += dt;
-      if (b.hold <= 0 && b.attack >= 1.0) {
+      if (b.hold <= 0 && b.attack >= 0.8) {
         b.phase = 'telegraph';
         b.t = 0;
-        b.warnX = b.x;
-        b.warnY = clamp(py + player.vy * 0.25, top + 30, bot - 30); // leads your swim
+        b.warnY = clamp(py + player.vy * 0.25, top + 30, bot - 30); // leads you
         b.fired = false;
         try {
           AudioSys.lunge();
@@ -278,29 +280,29 @@ const Boss = {
       b.hold -= dt;
     }
 
-    // ---- telegraph: 0.7s tell, boss leans into the shot (readable but quick) ----
+    // ---- telegraph: 0.65s, boss rears back and aims (you SEE the lane) ----
     if (b.phase === 'telegraph') {
-      b.y += clamp(b.warnY - b.y, -1, 1) * 40 * dt;
-      if (!b.fired && b.t >= 0.7) {
+      if (b.ax == null) b.ax = Math.max(320, W * 0.62);
+      b.x += clamp(b.ax + 34 - b.x, -1, 1) * 90 * dt; // rear back, then go
+      b.y += clamp((b.warnY - b.y) * 0.5, -1, 1) * 90 * dt; // aims at the lane
+      b.y = clamp(b.y, top + 20, bot - 20);
+      if (!b.fired && b.t >= 0.65) {
         b.fired = true;
         b.phase = 'strike';
         b.t = 0;
         b.attack = 0;
         try {
-          AudioSys.boost();
+          AudioSys.bossStrike();
         } catch (e) {}
-        shake = Math.max(shake, 4);
+        shake = Math.max(shake, 5);
         if (b.spec.attack === 'lunge') {
-          b.y0 = b.y;
           b.x0 = b.x;
-          // real dart: dives LEFT toward your depth AND x — must swim up/down NOW
-          b.vy0 = (b.warnY - b.y) / 0.38;
-          b.vx0 = -Math.max(260, W * 0.55);
+          b.y0 = b.y;
+          b.x1 = clamp(px + 170, 230, b.ax); // dives AT you, never past x=230
         } else if (b.spec.attack === 'sweep') {
-          b.y0 = py < (top + bot) / 2 ? bot - 30 : top + 40; // starts opposite you
-          b.y1 = py < (top + bot) / 2 ? top + 40 : bot - 30;
-          b.vy0 = (b.y1 - b.y0) / 0.75;
-          b.sweepX = clamp(px + 220, 320, W * 0.7); // sweeps through YOUR x
+          b.sweepX = clamp(px + 210, 300, W * 0.72); // sweeps through YOUR x
+          b.y0 = py < (top + bot) / 2 ? bot - 24 : top + 24; // starts opposite
+          b.y1 = py < (top + bot) / 2 ? top + 24 : bot - 24;
         } else if (b.spec.attack === 'volley') {
           b.shotN = b.hp < b.hpMax * 0.35 ? 7 : 5;
           b.shotT = 0;
@@ -311,30 +313,46 @@ const Boss = {
       }
     }
 
-    // ---- strike: execute the telegraphed move (single clock, no double-dt) ----
+    // ---- strike: the charge. Out, pause, BACK — always ends at the anchor ----
     if (b.phase === 'strike') {
+      const cy = (v) => clamp(v, top + 20, bot - 20);
+      const ease = (p) => p * p * (3 - 2 * p);
       if (b.spec.attack === 'lunge') {
-        // horizontal + vertical dart at the locked lane, then recovers forward
-        b.y = b.y0 + b.vy0 * b.t;
-        b.x = b.x0 + b.vx0 * b.t * 0.55;
-        if (b.t >= 0.62) {
+        // 0-0.42s dash in, 0.42-0.57 hold, 0.57-1.07 return. Reads as a BITE.
+        if (b.t < 0.42) {
+          const e = ease(b.t / 0.42);
+          b.x = b.x0 + (b.x1 - b.x0) * e;
+          b.y = cy(b.y0 + (b.warnY - b.y0) * e);
+        } else if (b.t < 0.57) {
+          b.x = b.x1;
+          b.y = cy(b.warnY);
+        } else {
+          const e = ease(Math.min(1, (b.t - 0.57) / 0.5));
+          b.x = b.x1 + (b.ax - b.x1) * e;
+          b.y = cy(b.warnY + (b.home - b.warnY) * e);
+        }
+        b.x = Math.max(200, b.x);
+        if (b.t >= 1.07) {
           b.phase = 'attack';
           b.t = 0;
-          b.home = clamp(b.warnY, top + 40, bot - 40);
-          b.hold = rand(0.9, 1.4);
+          b.home = cy(b.warnY);
+          b.hold = rand(0.8, 1.2);
         }
       } else if (b.spec.attack === 'sweep') {
-        // vertical coil through your x — dodge sideways timing, not just depth
-        b.y = b.y0 + b.vy0 * b.t;
+        // 0.8s vertical coil through your x — dodge the TIMING, not just depth
+        const e = Math.min(1, b.t / 0.8);
+        b.y = cy(b.y0 + (b.y1 - b.y0) * e);
         b.x = b.sweepX + Math.sin(b.t * 9) * 12;
-        if (b.t >= 0.9) {
+        if (b.t >= 0.85) {
           b.phase = 'attack';
           b.t = 0;
           b.home = top + (bot - top) * 0.5;
-          b.hold = rand(0.9, 1.3);
+          b.hold = rand(0.8, 1.2);
         }
       } else if (b.spec.attack === 'volley' || b.spec.attack === 'ring') {
         const enr = b.hp < b.hpMax * 0.35 ? 1.3 : 1;
+        b.x += clamp(b.ax - b.x, -1, 1) * 120 * dt;
+        b.y = cy(b.home + Math.sin(b.t * 3) * 16);
         b.shotT -= dt;
         if (b.shotT <= 0 && b.shotN > 0 && _shots.length < _SHOT_MAX) {
           b.shotN--;
@@ -363,13 +381,13 @@ const Boss = {
         if (b.shotN <= 0 && b.t > 0.9) {
           b.phase = 'attack';
           b.t = 0;
-          b.hold = rand(0.8, 1.2);
+          b.hold = rand(0.7, 1.1);
         }
       }
-      if (b.t > 2.0) {
+      if (b.t > 2.2) {
         b.phase = 'attack';
         b.t = 0;
-        b.hold = rand(0.9, 1.2);
+        b.hold = rand(0.8, 1.1);
       }
     }
 

@@ -17,11 +17,12 @@ const MUS_PAT = [
   [-1, 1, 2, 4, -1, 3, -1, 0],
 ];
 // i - VI - III - VII in D minor (Dm, B♭, F, C): the standard "vast and a little
-// sad" cycle. Root first (it gets the triangle wave), then the two upper voices.
+// sad" cycle. Full triads (root position) — earlier B♭/F were root+fifth+octave
+// power chords and rang hollow against the drone.
 const MUS_CHORDS = [
   [146.83, 220.0, 349.23], // Dm  : D3 A3 F4
-  [116.54, 174.61, 233.08], // B♭ : B♭2 F3 B♭3
-  [174.61, 261.63, 349.23], // F   : F3 C4 F4
+  [116.54, 146.83, 174.61], // B♭ : B♭2 D3 F3
+  [174.61, 220.0, 261.63], // F   : F3 A3 C4
   [130.81, 196.0, 329.63], // C   : C3 G3 E4
 ];
 const SFX_FILES = {
@@ -49,6 +50,10 @@ const SFX_FILES = {
 const AudioSys = {
   ctx: null,
   master: null,
+  sfxBus: null, // effects: file SFX + synth cues (own volume)
+  musBus: null, // background: generated score + sea bed (own volume)
+  musVol: 0.55, // background default 55% — the old full-blast score was too loud
+  sfxVol: 1.0,
   muted: false,
   ambientNodes: null,
   pools: null, // name -> [{el, ok}] x3, each routed through master (mute-safe)
@@ -64,6 +69,22 @@ const AudioSys = {
       this.master = this.ctx.createGain();
       this.master.gain.value = 0.55;
       this.master.connect(this.ctx.destination);
+      // two sub-buses so music and effects get SEPARATE volumes (old: one
+      // master, mute killed both). Volumes persist across sessions.
+      try {
+        const mv = parseFloat(localStorage.getItem('nemoMusVol'));
+        if (isFinite(mv)) this.musVol = clamp(mv, 0, 1);
+        const sv = parseFloat(localStorage.getItem('nemoSfxVol'));
+        if (isFinite(sv)) this.sfxVol = clamp(sv, 0, 1);
+        this.muted = localStorage.getItem('nemoMuted') === '1';
+      } catch (e) {}
+      this.sfxBus = this.ctx.createGain();
+      this.sfxBus.gain.value = this.sfxVol;
+      this.sfxBus.connect(this.master);
+      this.musBus = this.ctx.createGain();
+      this.musBus.gain.value = this.musVol;
+      this.musBus.connect(this.master);
+      if (this.muted) this.master.gain.value = 0;
       this.startAmbient();
       this.ensureMedia();
       this.musicInit();
@@ -73,7 +94,24 @@ const AudioSys = {
   },
   setMuted(m) {
     this.muted = m;
+    try {
+      localStorage.setItem('nemoMuted', m ? '1' : '0');
+    } catch (e) {}
     if (this.master) this.master.gain.value = m ? 0 : 0.55;
+  },
+  setMusicVol(v) {
+    this.musVol = clamp(v, 0, 1);
+    try {
+      localStorage.setItem('nemoMusVol', String(this.musVol));
+    } catch (e) {}
+    if (this.musBus) this.musBus.gain.setTargetAtTime(this.musVol, this.ctx.currentTime, 0.05);
+  },
+  setSfxVol(v) {
+    this.sfxVol = clamp(v, 0, 1);
+    try {
+      localStorage.setItem('nemoSfxVol', String(this.sfxVol));
+    } catch (e) {}
+    if (this.sfxBus) this.sfxBus.gain.setTargetAtTime(this.sfxVol, this.ctx.currentTime, 0.05);
   },
   ensureMedia() {
     if (!this.ctx || this.pools) return;
@@ -88,7 +126,7 @@ const AudioSys = {
           el.addEventListener('error', () => {
             ch.ok = false;
           });
-          this.ctx.createMediaElementSource(el).connect(this.master);
+          this.ctx.createMediaElementSource(el).connect(this.sfxBus || this.master);
           this.pools[name].push(ch);
         } catch (e) {}
       }
@@ -156,8 +194,24 @@ const AudioSys = {
       if (pr && pr.catch) pr.catch(() => {});
       if (cut > 0)
         setTimeout(() => {
+          // fade out ~75ms, never hard-pause: stopping a loud file mid-wave
+          // is a click, and cut() is used on the longest samples
           try {
-            ch.el.pause();
+            const el = ch.el,
+              v0 = el.volume;
+            let k = 3;
+            const iv = setInterval(() => {
+              try {
+                el.volume = (v0 * --k) / 3;
+                if (k <= 0) {
+                  clearInterval(iv);
+                  el.pause();
+                  el.volume = v0;
+                }
+              } catch (e) {
+                clearInterval(iv);
+              }
+            }, 25);
           } catch (e) {}
         }, cut);
       return true;
@@ -177,7 +231,7 @@ const AudioSys = {
     g.gain.exponentialRampToValueAtTime(vol, t0 + 0.015);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     o.connect(g);
-    g.connect(this.master);
+    g.connect(this.sfxBus || this.master);
     o.start(t0);
     o.stop(t0 + dur + 0.05);
   },
@@ -187,7 +241,11 @@ const AudioSys = {
     const len = Math.max(1, (dur * this.ctx.sampleRate) | 0);
     const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
     const d = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    // fade IN over ~4ms: a buffer starting at full-scale noise is a click,
+    // and this fires on every hit/scrape/hat — the background "cracking".
+    const ramp = Math.max(1, Math.floor(0.004 * this.ctx.sampleRate));
+    for (let i = 0; i < len; i++)
+      d[i] = (Math.random() * 2 - 1) * (1 - i / len) * Math.min(1, i / ramp);
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
     const f = this.ctx.createBiquadFilter();
@@ -198,7 +256,7 @@ const AudioSys = {
     g.gain.value = vol;
     src.connect(f);
     f.connect(g);
-    g.connect(this.master);
+    g.connect(this.sfxBus || this.master);
     src.start(t0);
   },
   click() {
@@ -250,8 +308,7 @@ const AudioSys = {
       this.tone(160, 0.4, 'sawtooth', 0.14, 620);
     }
   },
-  bossRoar() {
-    // the boss's opening bellow: a low chesty growl over a sub thump, so the
+  bossRoar() {    // the boss's opening bellow: a low chesty growl over a sub thump, so the
     // player hears SIZE before they see it. Rough, not pretty — it's a threat.
     if (!this.playFile('lunge', 0.9)) {
       this.tone(55, 1.1, 'sawtooth', 0.3, 40);
@@ -259,6 +316,12 @@ const AudioSys = {
       this.noiseBurst(0.55, 180, 0.5, 0.08);
       this.noiseBurst(0.3, 1400, 0.2, 0.12); // the wet rasp
     }
+  },
+  bossStrike() {
+    // strike whoosh: water parting + low thump. NOT the boost sound — the old
+    // code reused boost() here so every boss attack sounded like the player.
+    this.noiseBurst(0.35, 700, 0.35);
+    this.tone(140, 0.3, 'sine', 0.3, 60);
   },
   boost() {
     if (!this.playFile('boost', 0.8, 900)) {
@@ -442,7 +505,7 @@ const AudioSys = {
     try {
       const c = this.ctx;
       const bus = c.createGain();
-      bus.gain.value = 0.44;
+      bus.gain.value = 0.32; // was 0.44 — the generated score sat over everything
       // one lowpass over the whole score: underwater has no top end, and it also
       // stops the plucks from ever sounding shrill on phone speakers
       const lp = c.createBiquadFilter();
@@ -450,7 +513,7 @@ const AudioSys = {
       lp.frequency.value = 1900;
       lp.Q.value = 0.5;
       bus.connect(lp);
-      lp.connect(this.master);
+      lp.connect(this.musBus || this.master);
       const layer = (v) => {
         const g = c.createGain();
         g.gain.value = v;
@@ -474,7 +537,7 @@ const AudioSys = {
         o.frequency.value = f;
         o.detune.value = d;
         const g = c.createGain();
-        g.gain.value = ty === 'triangle' ? 0.4 : 1;
+        g.gain.value = ty === 'triangle' ? 0.3 : 0.8;
         o.connect(g);
         g.connect(droneG);
         o.start();
@@ -485,7 +548,11 @@ const AudioSys = {
       const nlen = (0.12 * c.sampleRate) | 0;
       const nbuf = c.createBuffer(1, nlen, c.sampleRate);
       const nd = nbuf.getChannelData(0);
-      for (let i = 0; i < nlen; i++) nd[i] = (Math.random() * 2 - 1) * (1 - i / nlen);
+      // fade the attack in (~5ms): hat hits every offbeat at high intensity and
+      // a full-scale first sample reads as background cracking
+      const hramp = Math.max(1, Math.floor(0.005 * c.sampleRate));
+      for (let i = 0; i < nlen; i++)
+        nd[i] = (Math.random() * 2 - 1) * (1 - i / nlen) * Math.min(1, i / hramp);
       this.mus = {
         bus,
         droneG,
@@ -554,6 +621,11 @@ const AudioSys = {
     m.i += (tgt - m.i) * 0.07; // ~1.2s to cross the whole range: a swell, not a jump
     const i = m.i;
     const ct = c.currentTime;
+    if (m.next < ct - 0.2) {
+      // timer stalled (throttled tab / slow phone): drop the backlog, skip beats.
+      // Without this every late note is re-booked "now" as one stacked blast.
+      m.next = ct + 0.05;
+    }
     m.droneG.gain.setTargetAtTime(0.15 + i * 0.05, ct, 0.6);
     m.padG.gain.setTargetAtTime(0.085 + i * 0.05, ct, 0.8);
     m.pluckG.gain.setTargetAtTime(Math.max(0, (i - 0.16) * 0.9) * 0.42, ct, 0.5);
@@ -672,6 +744,13 @@ const AudioSys = {
         last = (last + 0.02 * w) / 1.02;
         d[i] = last * 3.2;
       }
+      // seamless loop: crossfade the last 0.25s into the head shape, so the
+      // 2s wrap has no step (a step here ticks audibly, forever, underneath)
+      const xf = Math.floor(0.25 * this.ctx.sampleRate);
+      for (let j = 0; j < xf; j++) {
+        const t = j / xf;
+        d[len - xf + j] = d[len - xf + j] * (1 - t) + d[j] * t;
+      }
       const src = this.ctx.createBufferSource();
       src.buffer = buf;
       src.loop = true;
@@ -689,7 +768,7 @@ const AudioSys = {
       lfoG.connect(g.gain);
       src.connect(lp);
       lp.connect(g);
-      g.connect(this.master);
+      g.connect(this.musBus || this.master);
       src.start();
       lfo.start();
       this.ambientNodes = { src, lfo };

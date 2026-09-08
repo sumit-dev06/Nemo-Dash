@@ -229,6 +229,34 @@ canvas {
   opacity: 0.8;
   margin: 8px 2px;
 }
+.menu-meta-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.volRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 2px;
+  font-size: 13px;
+}
+.volRow span {
+  flex: 0 0 86px;
+  text-align: left;
+  opacity: 0.9;
+}
+.volRow input[type='range'] {
+  flex: 1;
+  accent-color: #22c8ee;
+  height: 28px;
+}
+.volRow b {
+  flex: 0 0 30px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 #upgGrid {
   display: grid;
   gap: 8px;
@@ -503,6 +531,12 @@ kbd {
   user-select: none;
   -webkit-user-select: none;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  /* fades out while held (see .joy-hide): the pad overlaps Nemo on small
+     screens, and opacity keeps it touchable so the drag never breaks */
+  transition: opacity 0.22s ease;
+}
+#joyZone.joy-hide {
+  opacity: 0;
 }
 #joyZone::before {
   content: '▲';
