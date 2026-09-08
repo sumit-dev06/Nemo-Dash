@@ -1,15 +1,19 @@
 /* Nemo Dash service worker — offline-first cache. Bump on release. */
-const CACHE = 'nemo-dash-v2.8';
+const CACHE = 'nemo-dash-v3.1';
 const ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
   './css/style.css',
   './js/utils.js',
+  './js/sprites.js',
   './js/audio.js',
+  './js/biomes.js',
+  './js/bosses.js',
   './js/data.js',
   './js/state.js',
   './js/world.js',
+  './js/director.js',
   './js/flow.js',
   './js/update.js',
   './js/render.js',
@@ -39,7 +43,6 @@ const ASSETS = [
   './assets/sfx/heart.mp3',
   './assets/sfx/zap.mp3',
   './assets/sfx/snap.mp3',
-  './assets/sfx/music.mp3',
 ];
 
 self.addEventListener('install', (e) => {

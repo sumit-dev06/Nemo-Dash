@@ -1,5 +1,58 @@
 # CHANGELOG — Nemo Dash (serious project, `index.html` + `css/` + `js/` + PWA)
 
+## v3.0 — The scope release: biomes, adaptive score, boulders, real animal physics
+- **Six biomes, not just "darker blue".** Reefs 1-15 now belong to named places you can
+  *see* you've entered — Sunlit Reef (1-3, turquoise), Kelp Forest (4-6, green sea),
+  Shipwreck Graveyard (7-8, steel-teal + rust), Jellyfish Bloom (9-10, magenta-lavender),
+  Volcanic Vents (11-12, sulphurous dark), The Abyss (13-15, near-black). The biome drives
+  the water gradient, the god-ray strength, the seaweed hue, the starfish palette, the
+  seabed sand tint and the boulder rock family (`js/biomes.js`). The descent mechanic
+  (swim band narrows, water darkens as caveK → 1) is untouched — the biomes only repaint
+  it. The level banner now reads `LEVEL 5 — Hunter's Ground · Kelp Forest`.
+- **The music is generated, and it reacts.** v2.8 looped an R&B mp3 that never changed.
+  v3.0 synthesises the whole score (`musicInit`): drone (D1/D2/A2) + pad (Dm–B♭–F–C) +
+  pentatonic pluck + kick + hat, four layers each on their own gain under one 1900 Hz
+  lowpass so it sits *in* the water. `musicIntensity(0..1)` is written every frame from
+  the Director's live threat weight (+0.28 on the last heart, +0.12 boosting) and the
+  tempo rides it 82 → 104 BPM. It runs on a WebAudio two-clock scheduler (setTimeout on
+  90 ms, books notes 350 ms ahead) so the groove is sample-accurate even when the render
+  loop stutters, and a muted game creates zero nodes. `musicDuck(sec)` pulls it to
+  silence for the death cinematic and the win sting.
+- **Every event has a sound now.** Eight generated cues with no mp3 needed: `thud`,
+  `netLand` (cage hits the seabed), `slam` (you're driven into the sand), `plink` (a
+  fishing line breaks the surface), `scrape` (riding a boulder — pitch by rock height),
+  `buffEnd` (shield/magnet/slow has 1.5 s left), `comboUp` (every 5th combo, rises),
+  `gate` (the coral gate appears). Mis-assigned sounds fixed: the seabed slam played the
+  crab-claw file, net capture played the boat splash, the boulder ride played a bubble.
+  The empty-tank cue now also fires on the keyboard.
+- **Seabed boulders, and they're fair.** Sharing one `rockProfile(t)` between collision
+  and art means what you see is exactly what blocks you. Crown-flattened raised cosine
+  `(0.5+0.5cos πt)^0.75` is tangent to the sand at both toes (slope 0) and never traps —
+  verified ride: 0 px penetration, 0 hearts lost, 66 ride frames, max 8.5 px lift/frame.
+  Rocks are wide (w ≈ 2.1-3.4 × h), erosion-only silhouette, a sand skirt, and take the
+  biome's rock family. Caps hold at 3 (shoulder rocks reserve 2 slots so they cannot
+  creep past the cap).
+- **Cage frequency fixed.** The `patience`/`starving` starvation override plus authored
+  waves went from *zero cages in 82 s* to 8 cages in 90 s with a 9.2 s minimum gap —
+  the net is a hazard now, not a memory.
+- **Real animal physics, and it's cheaper than what it replaced.** Hunters, jellies and
+  fry are velocity-driven rather than position-driven: each owns `vy` and its drawn body
+  pitch derives from `atan2(vy, |vx|)`, so a shark that climbs is nose-up instead of
+  gliding sideways level. Jellies pulse-propulse (a contraction kicks `vy`, then station-
+  keeping, negative buoyancy and a damp restore the drift). All trig rebuilt on cached
+  sin/cos and the angle-sum identity, jellies render all five tentacles in one path, and
+  the renderer now computes two `Math.exp` per frame total instead of one per entity.
+- **Clutter got a hard ceiling.** max live gameplay objects dropped ~110 → 27 (2 current
+  bands, not 3; capped predators/jellies/fry/nets/hooks/pearls/powerups). The screens can
+  breathe.
+- **Perf cuts you can't see but your phone can.** The seabed (sand gradient + 40 pebbles
+  + 392 caustic points) is baked into ONE horizontally-tiling strip blitted twice; the
+  cave-roof and gate glow gradients are memoised; off-screen hazards are culled before
+  they cost a path walk. Per-frame gradient count went to **zero** and peak draw ops
+  dropped **3554 → ~2100** (measured with a new `?perf=1` / `?perf=2` overlay that also
+  reports fps, frame ms, live entity counts, DPR and sprite cache size).
+
+
 ## v2.1 — Install banner + comfy buttons (current)
 - **Install banner like a proper app:** top strip (icon + name + Installable App badge +
   Install App + ×) on phones AND desktop, HUD drops below it; menu button mirrors it;

@@ -6,7 +6,12 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'm' || e.key === 'M') toggleMute();
   if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') togglePause();
   if (e.key === 'Enter' && state === 'menu') startLevel(1);
-  if (e.key === 'Shift' || e.key === ' ') input.boostHeld = true;
+  if (e.key === 'Shift' || e.key === ' ') {
+    // an empty tank must SAY it is empty on the keyboard too, not just on the pad
+    if (state === 'playing' && !player.dead && player.boost <= 1 && !input.boostHeld)
+      AudioSys.boostEmpty();
+    input.boostHeld = true;
+  }
 });
 window.addEventListener('keyup', (e) => {
   if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') input.up = false;
@@ -20,26 +25,39 @@ function pointerPos(e) {
   const v = ((cy - r.top) / r.height) * H;
   return isFinite(v) ? clamp(v, 0, H) : player.y;
 }
-canvas.addEventListener('pointerdown', (e) => {
-  AudioSys.ensure();
-  input.pointerActive = true;
-  input.pointerY = pointerPos(e);
-  canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
-});
-canvas.addEventListener('pointermove', (e) => {
-  if (input.pointerActive) input.pointerY = pointerPos(e);
-});
-window.addEventListener('pointerup', () => {
-  input.pointerActive = false;
-});
-window.addEventListener('pointercancel', () => {
-  input.pointerActive = false;
-});
 function isTouchDevice() {
   return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 }
+// Desktop mouse-drag steering ONLY. On phones this used to run alongside the
+// joystick: any stray thumb, palm or second finger on the play area set
+// pointerActive and yanked the fish to that height, fighting the stick. One
+// device, one control scheme.
+if (!isTouchDevice()) {
+  canvas.addEventListener('pointerdown', (e) => {
+    AudioSys.ensure();
+    input.pointerActive = true;
+    input.pointerY = pointerPos(e);
+    canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (input.pointerActive) input.pointerY = pointerPos(e);
+  });
+  window.addEventListener('pointerup', () => {
+    input.pointerActive = false;
+  });
+  window.addEventListener('pointercancel', () => {
+    input.pointerActive = false;
+  });
+}
 document.addEventListener('visibilitychange', () => {
+  // never come back from a tab switch with the stick still latched
+  if (typeof window.joyReset === 'function') window.joyReset();
+  input.pointerActive = false;
   if (document.hidden && state === 'playing') togglePause();
+});
+window.addEventListener('blur', () => {
+  if (typeof window.joyReset === 'function') window.joyReset();
+  input.pointerActive = false;
 });
 // landscape-only phones: portrait shows the rotate animation + install.
 // Menu stays hidden behind it in mobile browsers so there is no scrollable
@@ -83,6 +101,10 @@ function toggleMute() {
 function togglePause() {
   if (state === 'playing') {
     state = 'paused';
+    // let go of the stick: the overlay swallows the pointerup, so without this
+    // the fish resumes still steering wherever the thumb happened to be
+    if (typeof window.joyReset === 'function') window.joyReset();
+    input.pointerActive = false;
     refreshPauseCard();
     show('paused');
   } else if (state === 'paused') {
@@ -237,55 +259,86 @@ document.getElementById('btnQuit').onclick = () => {
 };
 
 // ---------- touch joystick (phones, left side) ----------
-// Drag anywhere on the stick: up/down steers, right surges forward.
+// Floating-origin stick: wherever your thumb lands becomes the centre, so the
+// knob never teleports to full deflection when you press near the rim.
+// Drag: up/down steers, right surges forward.
 // Left half is ignored on purpose — the fish never swims backwards.
 function setupTouchNav() {
   const nav = document.getElementById('touchNav');
   if ('ontouchstart' in window || navigator.maxTouchPoints > 0) nav.classList.add('show');
   const jz = document.getElementById('joyZone');
   const knob = document.getElementById('joyKnob');
-  const R = 34; // max knob travel, px
+  const R = 48; // thumb travel for full deflection, px (was 34 — only ~5mm, near-binary)
+  let KR = 34; // knob travel inside the pad; re-measured per touch (pad shrinks on small screens)
+  const DEAD = 0.06; // tiny — the floating origin removes the need for a big dead zone
+  let joyId = null; // pointerId that owns the stick; stray fingers are ignored
+  let ox = 0,
+    oy = 0; // floating origin — set wherever the thumb first lands
+  let kx = 0,
+    ky = 0; // last knob offset written (skip redundant style writes)
   const setKnob = (dx, dy) => {
-    if (knob) knob.style.transform = 'translate(calc(-50% + ' + dx * R + 'px), calc(-50% + ' + dy * R + 'px))';
+    if (!knob) return;
+    const nx = Math.round(dx * KR),
+      ny = Math.round(dy * KR);
+    if (nx === kx && ny === ky) return; // no-op writes still cost a style recalc
+    kx = nx;
+    ky = ny;
+    knob.style.transform =
+      'translate3d(calc(-50% + ' + nx + 'px), calc(-50% + ' + ny + 'px), 0)';
   };
-  const reset = () => {
+  const reset = (e) => {
+    // only the finger that owns the stick may release it
+    if (e && joyId !== null && e.pointerId !== undefined && e.pointerId !== joyId) return;
+    joyId = null;
     input.joyTX = 0;
     input.joyTY = 0;
-    input.joyX = 0;
-    input.joyY = 0;
     setKnob(0, 0);
   };
+  window.joyReset = reset; // pause / blur / state changes must be able to let go
   if (jz) {
     const move = (e) => {
-      e.preventDefault();
-      AudioSys.ensure();
-      const r = jz.getBoundingClientRect();
-      let dx = (e.clientX - (r.left + r.width / 2)) / R;
-      let dy = (e.clientY - (r.top + r.height / 2)) / R;
+      if (joyId === null || e.pointerId !== joyId) return;
+      if (e.cancelable) e.preventDefault();
+      let dx = (e.clientX - ox) / R;
+      let dy = (e.clientY - oy) / R;
       const m = Math.hypot(dx, dy);
       if (m > 1) {
         dx /= m;
         dy /= m;
       }
-      if (Math.hypot(dx, dy) < 0.12) {
+      if (Math.hypot(dx, dy) < DEAD) {
         dx = 0;
-        dy = 0; // dead zone so the fish rests when the thumb does
+        dy = 0; // fish rests when the thumb does
       }
       input.joyTX = Math.max(0, dx); // right only — never backwards
       input.joyTY = dy;
       setKnob(dx, dy);
     };
     jz.addEventListener('pointerdown', (e) => {
+      if (joyId !== null) return; // already owned — ignore extra fingers
+      AudioSys.ensure();
+      joyId = e.pointerId;
+      // one layout read per touch (never per move): keeps the knob inside the pad
+      // at whatever size the current breakpoint gave us
+      if (knob) KR = Math.max(12, (jz.clientWidth - knob.offsetWidth) / 2 - 2);
+      // floating origin: this touch point IS the centre, so the stick reads 0
+      ox = e.clientX;
+      oy = e.clientY;
+      input.joyTX = 0;
+      input.joyTY = 0;
+      setKnob(0, 0);
       try {
         jz.setPointerCapture(e.pointerId);
       } catch (err) {}
-      move(e);
+      if (e.cancelable) e.preventDefault();
     });
-    jz.addEventListener('pointermove', (e) => {
-      if (e.buttons > 0) move(e);
-    });
+    jz.addEventListener('pointermove', move);
     jz.addEventListener('pointerup', reset);
     jz.addEventListener('pointercancel', reset);
+    // capture can be revoked by the browser (gesture, tab switch, system UI).
+    // Without this the stick stayed latched at its last value and the fish kept
+    // swimming into a wall until the next touch.
+    jz.addEventListener('lostpointercapture', reset);
   }
   // boost button: tap toggles the burst. Pointer events ONLY — binding touchstart
   // too would fire twice per tap (toggle on, then straight back off).
@@ -352,10 +405,25 @@ function goFullscreen() {
   } catch (e) {}
 }
 // PWA: offline cache when served over http(s); silent no-op on file://
+// ?nosw=1 skips registration and tears down any existing worker — the offline
+// cache is keyed on the release name and serves cache-first with ignoreSearch,
+// so during local development it happily hands back the previous build's JS.
+let _noSW = false;
+try {
+  _noSW = new URLSearchParams(location.search).get('nosw') === '1';
+} catch (e) {}
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-  });
+  if (_noSW) {
+    navigator.serviceWorker
+      .getRegistrations()
+      .then((rs) => rs.forEach((r) => r.unregister()))
+      .catch(() => {});
+    if (window.caches) caches.keys().then((ks) => ks.forEach((k) => caches.delete(k)));
+  } else {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
 }
 // install prompt → reveal the INSTALL APP button (Android/Chrome; iOS uses Share → Add to Home Screen)
 let deferredInstall = null;

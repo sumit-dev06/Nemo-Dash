@@ -1,7 +1,29 @@
-// ---------- audio: real SFX files + procedural bed ----------
+// ---------- audio: real SFX files + procedural bed + generated score ----------
 // Recordings: assets/sfx/*.mp3 (Mixkit, royalty-free — credit in docs/AUDIO.md).
-// Water ambience + bubbles stay procedural (owner-approved). Every file SFX keeps a
-// synth fallback, so a missing/blocked file degrades to beeps, never silence.
+// Water ambience, bubbles and (as of v3.0) the MUSIC are generated in WebAudio.
+// Every file SFX keeps a synth fallback, so a missing/blocked file degrades to
+// beeps, never silence.
+//
+// Music note tables (D natural minor). Melody notes are the D minor pentatonic in
+// Hz — D4 F4 G4 A4 C5 D5 — so the walked line can never hit a sour interval; the
+// pluck layer doubles them an octave up when the game gets frantic.
+const MUS_PENT = [293.66, 349.23, 392.0, 440.0, 523.25, 587.33];
+// Melody patterns, as indices into MUS_PENT; -1 is a rest, and the rests are the
+// point — a line with no gaps reads as a ringtone.
+const MUS_PAT = [
+  [0, -1, 2, 3, -1, 1, 2, -1],
+  [4, 3, -1, 2, 0, -1, 1, -1],
+  [0, 2, 3, -1, 4, -1, 3, 2],
+  [-1, 1, 2, 4, -1, 3, -1, 0],
+];
+// i - VI - III - VII in D minor (Dm, B♭, F, C): the standard "vast and a little
+// sad" cycle. Root first (it gets the triangle wave), then the two upper voices.
+const MUS_CHORDS = [
+  [146.83, 220.0, 349.23], // Dm  : D3 A3 F4
+  [116.54, 174.61, 233.08], // B♭ : B♭2 F3 B♭3
+  [174.61, 261.63, 349.23], // F   : F3 C4 F4
+  [130.81, 196.0, 329.63], // C   : C3 G3 E4
+];
 const SFX_FILES = {
   click: 'click.mp3',
   coin: 'coin.mp3',
@@ -30,7 +52,7 @@ const AudioSys = {
   muted: false,
   ambientNodes: null,
   pools: null, // name -> [{el, ok}] x3, each routed through master (mute-safe)
-  musicEl: null, // looping background tune (single element, low volume)
+  mus: null, // procedural music engine (see musicInit)
   ensure() {
     if (this.ctx) {
       if (this.ctx.state === 'suspended') this.ctx.resume();
@@ -44,24 +66,10 @@ const AudioSys = {
       this.master.connect(this.ctx.destination);
       this.startAmbient();
       this.ensureMedia();
-      this.ensureMusic();
+      this.musicInit();
     } catch (e) {
       /* no audio */
     }
-  },
-  ensureMusic() {
-    // background tune: soft island loop under everything (owner request)
-    if (!this.ctx || this.musicEl) return;
-    try {
-      const el = new Audio('assets/sfx/music.mp3');
-      el.preload = 'auto';
-      el.loop = true;
-      el.volume = 0.3;
-      this.ctx.createMediaElementSource(el).connect(this.master);
-      const pr = el.play();
-      if (pr && pr.catch) pr.catch(() => {});
-      this.musicEl = el;
-    } catch (e) {}
   },
   setMuted(m) {
     this.muted = m;
@@ -242,6 +250,16 @@ const AudioSys = {
       this.tone(160, 0.4, 'sawtooth', 0.14, 620);
     }
   },
+  bossRoar() {
+    // the boss's opening bellow: a low chesty growl over a sub thump, so the
+    // player hears SIZE before they see it. Rough, not pretty — it's a threat.
+    if (!this.playFile('lunge', 0.9)) {
+      this.tone(55, 1.1, 'sawtooth', 0.3, 40);
+      this.tone(82, 0.9, 'triangle', 0.24, 58, 0.05);
+      this.noiseBurst(0.55, 180, 0.5, 0.08);
+      this.noiseBurst(0.3, 1400, 0.2, 0.12); // the wet rasp
+    }
+  },
   boost() {
     if (!this.playFile('boost', 0.8, 900)) {
       this.noiseBurst(0.4, 900, 0.3);
@@ -318,6 +336,319 @@ const AudioSys = {
   snap() {
     // crab claw snap: hard woody pop
     if (!this.playFile('snap', 0.85)) this.noiseBurst(0.07, 1500, 0.35);
+  },
+
+  // ---------- new v3.0 cues: every event that used to happen in silence ----------
+  // A runner is mostly read through sound: v2.8 landed a steel cage on the seabed
+  // beside you with no noise at all, dropped hooks into the water silently, let
+  // buffs expire without telling you, and played the CRAB CLAW sample when you
+  // slammed into the sand. Each of these is generated, so none of them costs a
+  // download and all of them survive offline.
+  thud(vol) {
+    // heavy object meeting the seabed: low body + damped sand slap
+    const v = vol == null ? 1 : vol;
+    this.tone(96, 0.26, 'sine', 0.3 * v, 44);
+    this.noiseBurst(0.2, 210, 0.34 * v);
+  },
+  netLand() {
+    // cage hitting the floor: the thud, then the mesh ringing
+    this.thud(1);
+    this.tone(420, 0.16, 'square', 0.05, 300, 0.05);
+    this.noiseBurst(0.14, 2600, 0.07, 0.06);
+  },
+  slam() {
+    // the FISH hitting the sand — softer and wetter than a cage, and clearly
+    // not the crab-claw sample v2.8 used here
+    this.noiseBurst(0.24, 320, 0.3);
+    this.tone(120, 0.2, 'sine', 0.18, 60);
+  },
+  plink() {
+    // hook + line breaking the surface far above: thin, wet, high
+    this.tone(1750, 0.07, 'sine', 0.1, 2300);
+    this.noiseBurst(0.16, 3400, 0.12, 0.02);
+  },
+  scrape(k) {
+    // belly dragging over rock — filtered noise, pitch rising with how hard you
+    // are pressed into it. Deliberately quiet: it repeats while you ride.
+    this.noiseBurst(0.13, 520 + (k || 0) * 700, 0.12);
+  },
+  buffEnd() {
+    // "your powerup is going": two falling notes, unmistakably a loss
+    this.tone(880, 0.1, 'triangle', 0.12, 660);
+    this.tone(660, 0.16, 'triangle', 0.1, 440, 0.09);
+  },
+  comboUp(n) {
+    // combo milestone: a rising pentatonic arpeggio that climbs with the streak
+    const base = 523.25 * Math.pow(1.06, Math.min(n, 12));
+    for (let i = 0; i < 3; i++)
+      this.tone(base * [1, 1.2, 1.5][i], 0.16, 'sine', 0.13, null, i * 0.055);
+  },
+  gate() {
+    // the reef gate coming into view: a bright open fifth, calm not triumphant
+    this.tone(587.33, 0.5, 'sine', 0.1, null, 0);
+    this.tone(880, 0.55, 'sine', 0.08, null, 0.06);
+  },
+  boss() {
+    // the boss rising out of the dark: a low brass-ish swell + a rising fifth,
+    // set against a held low drum so it reads as "something big just woke up"
+    if (!this.playFile('boss', 1.0, 2000)) {
+      this.tone(82, 1.5, 'sawtooth', 0.3, 62);
+      this.tone(123, 1.1, 'triangle', 0.22, 98, 0.03);
+      this.tone(184, 0.7, 'sine', 0.16, 166, 0.7);
+      this.noiseBurst(0.35, 220, 0.45, 0.05);
+    }
+  },
+  bossDown() {
+    // the boss defeated: a falling triumphant run that lands on a big open fifth
+    if (!this.playFile('bossDown', 1.0, 2200)) {
+      [220, 262, 330, 440, 523].forEach((f, i) =>
+        this.tone(f, 0.26, 'triangle', 0.24, null, i * 0.11),
+      );
+      this.tone(660, 0.9, 'triangle', 0.26, 880, 0.55);
+      this.noiseBurst(0.7, 3400, 0.14, 0.2);
+    }
+  },
+
+  // ---------- procedural adaptive music ----------
+  // v3.0 deletes assets/sfx/music.mp3 (a fixed island loop that repeated every
+  // ~30s and knew nothing about the game) and generates the score instead:
+  //   1. it REACTS — the mix rises as hunters close in and falls back when the
+  //      water empties out, so the music is part of the danger read, and
+  //   2. it never repeats, because the melody is walked rather than recorded, and
+  //   3. it is free: nothing to download (the PWA works offline at every reef) and
+  //      WebAudio oscillators run on the audio thread, so the render loop pays
+  //      nothing. On a low-end phone this is cheaper than decoding an mp3.
+  //
+  // Musically: D natural minor. The melody is confined to the D minor PENTATONIC
+  // (D F G A C), where no two notes can clash — so a walked line always sounds
+  // deliberate. Chords cycle i-VI-III-VII (Dm-B♭-F-C), the standard "vast and a
+  // bit sad" progression, which is what an ocean should sound like.
+  // Four layers, each faded in by intensity, so the mix IS the difficulty meter:
+  //   drone   always      two detuned oscillators a fifth apart — deep water
+  //   pad     always      slow chord swells — the ocean breathing
+  //   pluck   i > 0.16    the melody; its register climbs with danger
+  //   pulse   i > 0.34    bass thump on the beat, plus a hat above 0.72 — the chase
+  musicInit() {
+    if (!this.ctx || this.mus) return;
+    try {
+      const c = this.ctx;
+      const bus = c.createGain();
+      bus.gain.value = 0.44;
+      // one lowpass over the whole score: underwater has no top end, and it also
+      // stops the plucks from ever sounding shrill on phone speakers
+      const lp = c.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 1900;
+      lp.Q.value = 0.5;
+      bus.connect(lp);
+      lp.connect(this.master);
+      const layer = (v) => {
+        const g = c.createGain();
+        g.gain.value = v;
+        g.connect(bus);
+        return g;
+      };
+      const droneG = layer(0.0001),
+        padG = layer(0.0001),
+        pluckG = layer(0.0001),
+        pulseG = layer(0.0001);
+      // drone: D1 + D2 + A2, slightly detuned against each other so it beats
+      // slowly instead of sitting still. Three oscillators, started once, forever.
+      const drones = [];
+      for (const [f, d, ty] of [
+        [36.71, 0, 'sine'],
+        [73.42, 5, 'triangle'],
+        [110.0, -4, 'sine'],
+      ]) {
+        const o = c.createOscillator();
+        o.type = ty;
+        o.frequency.value = f;
+        o.detune.value = d;
+        const g = c.createGain();
+        g.gain.value = ty === 'triangle' ? 0.4 : 1;
+        o.connect(g);
+        g.connect(droneG);
+        o.start();
+        drones.push(o);
+      }
+      // one reusable noise buffer for the hat (allocating a buffer per hit would
+      // be the only expensive thing in here)
+      const nlen = (0.12 * c.sampleRate) | 0;
+      const nbuf = c.createBuffer(1, nlen, c.sampleRate);
+      const nd = nbuf.getChannelData(0);
+      for (let i = 0; i < nlen; i++) nd[i] = (Math.random() * 2 - 1) * (1 - i / nlen);
+      this.mus = {
+        bus,
+        droneG,
+        padG,
+        pluckG,
+        pulseG,
+        drones,
+        nbuf,
+        i: 0.1, // smoothed intensity
+        target: 0.1,
+        boss: false, // boss fight: scheduler floors the intensity (musicBoss)
+        next: c.currentTime + 0.15,
+        step: 0,
+        bar: 0,
+        mel: 0, // index into the current melody pattern
+        timer: null,
+        duck: 0, // >0 = pull the score down (death, menus)
+      };
+      this.musicTick();
+    } catch (e) {
+      this.mus = null;
+    }
+  },
+  // The game calls this every frame with 0..1. It only stores a number — all the
+  // scheduling happens on the audio timer below, so the render loop is untouched.
+  musicIntensity(v) {
+    if (this.mus) this.mus.target = v < 0 ? 0 : v > 1 ? 1 : v;
+  },
+  musicDuck(sec) {
+    if (this.mus) this.mus.duck = sec == null ? 2.2 : sec;
+  },
+  // "boss mode": pin the intensity floor high and add a low ostinato pulse so the
+  // score has a distinct "something big" tension the moment a boss rises. Cheap:
+  // toggles a flag; the scheduler reads it once per 90ms tick.
+  musicBoss(on) {
+    if (this.mus) this.mus.boss = !!on;
+  },
+  musicScale(freqs) {
+    // per-biome melody scale (see BIOMES[x].scale): the engine is one loop, but
+    // the notes it walks change with the water. Called by setActiveBiome().
+    if (this.mus) this.mus.scale = freqs && freqs.length ? freqs : null;
+  },
+  // Look-ahead scheduler. Runs on a timer (NOT the animation frame): it wakes every
+  // ~90ms and books every note due in the next 350ms against the audio clock, so
+  // the groove is sample-accurate even when the render loop stutters or the phone
+  // throttles the tab. This is the standard WebAudio two-clock pattern.
+  musicTick() {
+    const m = this.mus;
+    if (!m) return;
+    const c = this.ctx;
+    m.timer = setTimeout(() => this.musicTick(), 90);
+    let tgt = m.target;
+    try {
+      if (typeof state !== 'undefined' && state !== 'playing') tgt = 0.08; // menus: bed only
+    } catch (e) {}
+    try {
+      // boss fight: the score is held at a high floor and the drone gains a slow
+      // pulse, so the fight has a tension the reef never has. Floors, not a jump
+      // — the player still drives it up with near-misses.
+      if (m.boss) tgt = Math.max(tgt, 0.55);
+    } catch (e) {}
+    if (m.duck > 0) {
+      m.duck -= 0.09;
+      tgt = 0;
+    }
+    m.i += (tgt - m.i) * 0.07; // ~1.2s to cross the whole range: a swell, not a jump
+    const i = m.i;
+    const ct = c.currentTime;
+    m.droneG.gain.setTargetAtTime(0.15 + i * 0.05, ct, 0.6);
+    m.padG.gain.setTargetAtTime(0.085 + i * 0.05, ct, 0.8);
+    m.pluckG.gain.setTargetAtTime(Math.max(0, (i - 0.16) * 0.9) * 0.42, ct, 0.5);
+    m.pulseG.gain.setTargetAtTime(Math.max(0, (i - 0.34) * 1.4) * 0.5, ct, 0.4);
+    if (this.muted) {
+      // keep the clock moving so the groove does not jump when sound comes back,
+      // but create nothing: a muted game should cost zero audio work
+      const spb0 = 60 / (82 + i * 22);
+      while (m.next < ct + 0.35) {
+        m.next += spb0 * 0.5;
+        m.step++;
+      }
+      return;
+    }
+    const spb = 60 / (82 + i * 22); // 82 BPM adrift → 104 BPM hunted
+    const eighth = spb * 0.5;
+    while (m.next < ct + 0.35) {
+      const t = Math.max(m.next, ct + 0.015);
+      const step = m.step & 7;
+      if (step === 0) {
+        m.bar++;
+        this.musicChord(t, spb * 4);
+      }
+      // melody: 8th-note pentatonic walk, rests included so it breathes
+      if (i > 0.16) {
+        const pat = MUS_PAT[(m.bar + (i > 0.6 ? 1 : 0)) % MUS_PAT.length];
+        const deg = pat[m.step % pat.length];
+        if (deg >= 0) {
+          const oct = i > 0.55 && (m.step & 3) === 0 ? 2 : 1;
+          const scale = m.scale || MUS_PENT; // per-biome mode (BIOMES[x].scale)
+          this.musicPluck(scale[deg % scale.length] * oct, t, spb);
+        }
+      }
+      // pulse: beats 1 and 3 of the bar (steps 0 and 4), hat on the offbeats
+      if (i > 0.34 && (step === 0 || step === 4)) this.musicThump(t, i);
+      if (i > 0.72 && step % 2 === 1) this.musicHat(t, i);
+      m.next += eighth;
+      m.step++;
+    }
+  },
+  musicChord(t, dur) {
+    const m = this.mus,
+      c = this.ctx;
+    const ch = MUS_CHORDS[m.bar % MUS_CHORDS.length];
+    for (let k = 0; k < ch.length; k++) {
+      const o = c.createOscillator();
+      o.type = k === 0 ? 'triangle' : 'sine';
+      o.frequency.value = ch[k];
+      o.detune.value = (k - 1) * 4;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(k === 0 ? 0.5 : 0.32, t + dur * 0.42); // slow swell
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur * 1.05);
+      o.connect(g);
+      g.connect(m.padG);
+      o.start(t);
+      o.stop(t + dur * 1.1);
+    }
+  },
+  musicPluck(f, t, spb) {
+    const m = this.mus,
+      c = this.ctx;
+    const o = c.createOscillator();
+    o.type = 'triangle';
+    o.frequency.value = f;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.5, t + 0.012); // hard attack = plucked
+    g.gain.exponentialRampToValueAtTime(0.0001, t + spb * 0.9);
+    o.connect(g);
+    g.connect(m.pluckG);
+    o.start(t);
+    o.stop(t + spb);
+  },
+  musicThump(t, i) {
+    const m = this.mus,
+      c = this.ctx;
+    const o = c.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(72, t);
+    o.frequency.exponentialRampToValueAtTime(34, t + 0.16);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.6 + i * 0.3, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+    o.connect(g);
+    g.connect(m.pulseG);
+    o.start(t);
+    o.stop(t + 0.3);
+  },
+  musicHat(t, i) {
+    const m = this.mus,
+      c = this.ctx;
+    const s = c.createBufferSource();
+    s.buffer = m.nbuf; // reused buffer: no per-hit allocation
+    const f = c.createBiquadFilter();
+    f.type = 'highpass';
+    f.frequency.value = 5200;
+    const g = c.createGain();
+    g.gain.value = 0.1 + (i - 0.72) * 0.2;
+    s.connect(f);
+    f.connect(g);
+    g.connect(m.pulseG);
+    s.start(t);
   },
   startAmbient() {
     if (!this.ctx || this.ambientNodes) return;

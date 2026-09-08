@@ -131,6 +131,31 @@ canvas {
 #hpPill.low #hpBar {
   animation: hpPulse 0.55s infinite alternate;
 }
+#bossPill {
+  border-color: rgba(255, 110, 110, 0.5);
+}
+#bossName {
+  color: #ffb3b3;
+  letter-spacing: 1px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+#bossWrap {
+  width: 120px;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 160, 160, 0.4);
+  border-radius: 999px;
+  overflow: hidden;
+}
+#bossBar {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #ff5e62, #ffb347);
+  border-radius: 999px;
+  transition: width 0.14s linear;
+  box-shadow: 0 0 12px rgba(255, 94, 98, 0.8);
+}
 @keyframes hpPulse {
   from {
     filter: brightness(1);
@@ -444,12 +469,16 @@ kbd {
 #joyZone {
   pointer-events: auto;
   position: relative;
-  width: 118px;
-  height: 118px;
+  /* 132px so a floating-origin thumb has room for its full 48px of travel in any
+     direction, even when it lands off-centre */
+  width: 132px;
+  height: 132px;
   border-radius: 50%;
   border: 2px solid rgba(255, 255, 255, 0.35);
-  background: rgba(3, 25, 40, 0.55);
-  backdrop-filter: blur(8px);
+  /* no backdrop-filter: a blur pass here means re-blurring the animating reef
+     behind the pad every single frame, and the pad only ever renders on touch
+     devices where that is exactly the frame budget we cannot spare. */
+  background: rgba(3, 25, 40, 0.62);
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -477,10 +506,13 @@ kbd {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 54px;
-  height: 54px;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
-  transform: translate(-50%, -50%);
+  transform: translate3d(-50%, -50%, 0);
+  /* JS writes translate3d() on this every move — keep it on its own compositor
+     layer so a thumb drag never repaints the pad or the HUD */
+  will-change: transform;
   background: linear-gradient(135deg, #3df5a6, #22c8ee);
   box-shadow:
     0 4px 16px rgba(34, 200, 238, 0.5),
@@ -507,8 +539,8 @@ kbd {
   height: 66px;
   border-radius: 50%;
   border: 2px solid rgba(255, 214, 110, 0.55);
-  background: rgba(3, 25, 40, 0.55);
-  backdrop-filter: blur(8px);
+  /* no backdrop-filter — same reason as #joyZone */
+  background: rgba(3, 25, 40, 0.7);
   color: #ffe9a8;
   font-size: 28px;
   touch-action: none;
@@ -650,6 +682,20 @@ kbd {
   padding: 4px 2px 8px;
   margin-top: 8px;
 }
+.biomeHead {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #7de9ff;
+  padding: 6px 2px 2px;
+  border-bottom: 1px solid rgba(125, 220, 255, 0.22);
+  margin-top: 6px;
+}
+.biomeHead:first-child {
+  margin-top: 0;
+}
 .lvCard {
   background: rgba(255, 255, 255, 0.06);
   border: 2px solid rgba(255, 255, 255, 0.14);
@@ -693,6 +739,23 @@ kbd {
 }
 .lvCard.endless b {
   color: #7de9ff;
+}
+.lvCard.boss {
+  border-color: rgba(255, 110, 110, 0.55);
+}
+.lvCard.boss b .bossTag {
+  font-style: normal;
+  font-size: 16px;
+  margin-left: 4px;
+}
+.lvCard.boss .bossSub {
+  display: block;
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #ff9a9a;
+  margin-top: 2px;
 }
 #roster {
   display: flex;
@@ -819,12 +882,12 @@ kbd {
     flex-basis: 112px;
   }
   #joyZone {
-    width: 104px;
-    height: 104px;
+    width: 118px;
+    height: 118px;
   }
   #joyKnob {
-    width: 48px;
-    height: 48px;
+    width: 52px;
+    height: 52px;
   }
 }
 /* short landscape screens (phones sideways): slim compact HUD that always fits */

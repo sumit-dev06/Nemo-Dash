@@ -3,6 +3,24 @@
 // Static layers (water, rays, shimmer bar, vignette) are baked once per resize
 // into bgCache: one blit replaces ~8 fullscreen gradient fills. Big phone win.
 let bgCache = null;
+// Current-band motion streaks: fixed table, so the drift is deterministic (no
+// per-frame randomness = no flicker) and costs zero allocation.
+//   o = start offset 0..1 across the wrap span   y = height 0..1 inside the band
+//   len/w = streak size in px                    v = drift speed px/s
+//   a = alpha. Long+faint reads as water; short+bright reads as spray, so mix both.
+const CUR_STREAKS = [
+  { o: 0.02, y: 0.14, len: 150, w: 2.2, v: 210, a: 0.5 },
+  { o: 0.31, y: 0.33, len: 96, w: 1.6, v: 260, a: 0.34 },
+  { o: 0.18, y: 0.52, len: 190, w: 2.6, v: 185, a: 0.55 },
+  { o: 0.62, y: 0.68, len: 120, w: 1.8, v: 240, a: 0.4 },
+  { o: 0.79, y: 0.86, len: 164, w: 2.2, v: 200, a: 0.46 },
+  { o: 0.47, y: 0.97, len: 82, w: 1.4, v: 285, a: 0.28 },
+];
+// Jelly tentacle phase offsets, precomputed. The five tentacles are drawn at
+// sin(ph + k) for k = -2..2; cos(k)/sin(k) are constants, so the per-frame work
+// collapses to two multiplies and an add per tentacle (see drawJelly).
+const TENT_C = [Math.cos(-2), Math.cos(-1), 1, Math.cos(1), Math.cos(2)];
+const TENT_S = [Math.sin(-2), Math.sin(-1), 0, Math.sin(1), Math.sin(2)];
 // lerp two hex colors (bake-time only, never per frame)
 function hexLerp(a, b, t) {
   const pa = [1, 3, 5].map((i) => parseInt(a.substr(i, 2), 16));
@@ -24,11 +42,18 @@ function waterStops() {
   try {
     k = caveK();
   } catch (e) {}
-  const open = ['#0d4a6e', '#083a5c', '#052a44', '#031c2e'];
-  const cave = ['#02090f', '#01070d', '#010509', '#000304'];
-  return { stops: open.map((c, i) => hexLerp(c, cave[i], k)), k };
+  // the palette is biome-owned now: open reef colours and the cave blend both
+  // come from the current biome, so 'Deep Blue' and 'Jellyfish Bloom' stop
+  // being the same water in a different shade of blue
+  return biomeWaterStops(k);
 }
 function bakeBackground() {
+  // every cache below is keyed on the viewport or the level palette, both of which
+  // are exactly what a re-bake means has changed
+  try {
+    if (typeof _gradCache !== 'undefined') for (const k in _gradCache) delete _gradCache[k];
+    if (typeof clearSprites === 'function') clearSprites();
+  } catch (e) {}
   try {
     bgCache = document.createElement('canvas');
     bgCache.width = Math.round(W * DPR);
@@ -44,7 +69,11 @@ function bakeBackground() {
     b.fillStyle = g;
     b.fillRect(0, 0, W, H);
     b.save();
-    b.globalAlpha = 0.1 * (1 - k) + 0.01; // god rays die out in the cave
+    // god-ray strength comes from the biome (the wreck and the abyss let almost
+    // no light through) and still dies out as the cave closes in
+    let lightA = 0.1;
+    try { lightA = BIOMES[activeBiome] ? BIOMES[activeBiome].lightAlpha : 0.1; } catch (e) {}
+    b.globalAlpha = lightA * (1 - k) + 0.01;
     b.fillStyle = '#bfefff';
     for (let i = 0; i < 4; i++) {
       const bx = 120 + i * 230;
@@ -67,6 +96,189 @@ function bakeBackground() {
   } catch (e) {
     bgCache = null;
   }
+}
+// ---------- ?perf=1 — numbers instead of impressions ----------
+// The whole point of this pass is "must not lag on a low-end phone", and that claim
+// is only worth anything if it can be measured ON the phone. Add ?perf=1 to the URL
+// (or set PERF.on = true in a console) for a corner panel with the real frame cost.
+// ?perf=2 additionally counts canvas calls per frame — that is the number to watch
+// when adding art, and it is how the 440-op seabed and the per-frame gradients were
+// found. Counting wraps the 2D context, so ?perf=2 is a profiler, not a benchmark:
+// read op counts from it and frame times from ?perf=1.
+const PERF = {
+  on: false,
+  ops: false, // count canvas calls
+  wrapped: false,
+  ms: 0, // last frame's update+render cost
+  msEMA: 0,
+  msMax: 0,
+  dtEMA: 0.016,
+  n: 0, // canvas ops this frame
+  nEMA: 0,
+  g: 0, // gradients built this frame
+  gEMA: 0,
+  sample(ms, rawDt) {
+    this.ms = ms;
+    this.msEMA = this.msEMA * 0.9 + ms * 0.1;
+    this.dtEMA = this.dtEMA * 0.92 + rawDt * 0.08;
+    if (ms > this.msMax) this.msMax = ms;
+    this.nEMA = this.nEMA * 0.9 + this.n * 0.1;
+    this.gEMA = this.gEMA * 0.9 + this.g * 0.1;
+    this.n = 0;
+    this.g = 0;
+  },
+  // wrap the hot context methods so every draw call is counted. Only ever called
+  // when ?perf=2 is on — the wrappers themselves cost more than what they measure.
+  wrap() {
+    this.wrapped = true;
+    const COUNT = ['fill','stroke','fillRect','strokeRect','drawImage','beginPath','moveTo','lineTo','arc','ellipse','quadraticCurveTo','bezierCurveTo','closePath','rect','fillText','strokeText','clip','save','restore','translate','rotate','scale'];
+    const GRAD = ['createLinearGradient', 'createRadialGradient'];
+    const self = this;
+    for (const k of COUNT) {
+      const f = ctx[k];
+      if (typeof f !== 'function') continue;
+      ctx[k] = function () {
+        self.n++;
+        return f.apply(ctx, arguments);
+      };
+    }
+    for (const k of GRAD) {
+      const f = ctx[k];
+      if (typeof f !== 'function') continue;
+      ctx[k] = function () {
+        self.g++;
+        return f.apply(ctx, arguments);
+      };
+    }
+  },
+};
+try {
+  PERF.on = /[?&]perf=[12]/.test(location.search);
+  PERF.ops = /[?&]perf=2/.test(location.search);
+} catch (e) {}
+function drawPerfOverlay() {
+  if (PERF.ops && !PERF.wrapped) PERF.wrap();
+  const fps = 1 / Math.max(0.0001, PERF.dtEMA);
+  const live =
+    predators.length + jellies.length + fries.length + pearlsArr.length +
+    powers.length + hooks.length + nets.length + boulders.length;
+  const sp = typeof spriteStats === 'function' ? spriteStats() : { count: 0, kb: 0 };
+  const rows = [
+    fps.toFixed(0) + ' fps   frame ' + PERF.msEMA.toFixed(1) + 'ms (pk ' + PERF.msMax.toFixed(0) + ')',
+    'budget ' + ((PERF.msEMA / 16.7) * 100).toFixed(0) + '%   DPR ' + DPR.toFixed(1) + '   ' + W + 'x' + H,
+    'live ' + live + '  pr' + predators.length + ' jl' + jellies.length + ' fr' + fries.length +
+      ' pe' + pearlsArr.length + ' pw' + powers.length + ' hk' + hooks.length + ' nt' + nets.length + ' rk' + boulders.length,
+    'fx ' + parts.length + ' part  ' + bubbles.length + ' bub  ' + currents.length + ' cur',
+    'sprites ' + sp.count + ' (' + sp.kb + 'kb)',
+  ];
+  if (PERF.ops) rows.push('ops/frame ' + PERF.nEMA.toFixed(0) + '   grads ' + PERF.gEMA.toFixed(1));
+  try {
+    if (typeof Director !== 'undefined')
+      rows.push('threat ' + Director.threat().toFixed(1) + '/' + Director.threatMax.toFixed(1));
+  } catch (e) {}
+  ctx.save();
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0); // immune to shake/translate
+  ctx.font = '600 10px ui-monospace, Menlo, monospace';
+  ctx.textAlign = 'left';
+  let wmax = 0;
+  for (const r of rows) wmax = Math.max(wmax, ctx.measureText(r).width);
+  ctx.fillStyle = 'rgba(0,0,0,0.62)';
+  ctx.fillRect(6, 6, wmax + 14, rows.length * 13 + 10);
+  for (let i = 0; i < rows.length; i++) {
+    // red once a frame costs more than a 60Hz budget — the only line that matters
+    ctx.fillStyle = i === 0 && PERF.msEMA > 16.7 ? '#ff6b81' : i === 0 ? '#7dffc4' : '#cfe9ff';
+    ctx.fillText(rows[i], 13, 20 + i * 13);
+  }
+  ctx.restore();
+}
+
+// ---------- the seabed, as ONE bitmap ----------
+// v2.8 painted the floor every frame: a fresh linear gradient + 2 fillRects + 40
+// ellipses (pebbles) + 8 caustic polylines of ~50 points each. That is ~440 path
+// operations per frame for a band of sand nobody looks at directly, and it was the
+// single largest fixed cost in the renderer.
+// All of it is baked into one horizontally-tiling strip instead, blitted twice.
+// Two things make this exact rather than approximate:
+//   1. the sand gradient is vertical only, and a vertical gradient is unchanged by
+//      horizontal translation — so scrolling the baked sand looks identical to
+//      re-filling it in place;
+//   2. the pebbles already scrolled as a rigid set on a (W+100) modulo, so the strip
+//      IS their layout. Positions match the old code pixel for pixel.
+// The caustic ripples pick a frequency that fits a whole number of cycles into the
+// strip so the tiling seam is invisible; they now drift with the floor instead of
+// animating in place, which at alpha 0.05 is indistinguishable and free.
+function seabedSpan() {
+  return W + 100;
+}
+function seabedStrip() {
+  const span = seabedSpan();
+  const top = FLOOR_Y - 4;
+  const h = H - top + 20;
+  const fb = BIOMES[activeBiome] || BIOMES.sunlit;
+  return sprite('seabed|' + fb.name + '|' + (span | 0) + '|' + (h | 0), span, h, (b, w) => {
+    const sand = b.createLinearGradient(0, 4, 0, h - 20);
+    sand.addColorStop(0, fb.floorTop);
+    sand.addColorStop(0.25, fb.floorMid);
+    sand.addColorStop(1, fb.floorBot);
+    b.fillStyle = sand;
+    b.fillRect(0, 4, w, h - 4);
+    b.fillStyle = fb.floorLip; // sunlit lip where sand meets water
+    b.fillRect(0, 4, w, 3);
+    // pebbles (same i*97 / i*53 layout as v2.8), with a wrapped copy of any pebble
+    // that straddles the seam so the tile joins cleanly
+    b.fillStyle = 'rgba(0,0,0,0.18)';
+    for (let i = 0; i < 40; i++) {
+      const px = (i * 97) % span;
+      const py = 22 + ((i * 53) % 34); // = FLOOR_Y + 18 + ... in strip space
+      const rx = 14 + (i % 4) * 5;
+      b.beginPath();
+      b.ellipse(px, py, rx, 3.5, 0, 0, TAU);
+      b.fill();
+      if (px + rx > span || px - rx < 0) {
+        b.beginPath();
+        b.ellipse(px + (px < rx ? span : -span), py, rx, 3.5, 0, 0, TAU);
+        b.fill();
+      }
+    }
+    // caustics: light ripples on the sand. k is snapped so the wave closes on itself
+    const k = (Math.max(1, Math.round((span * 0.05) / TAU)) * TAU) / span;
+    b.save();
+    b.globalAlpha = 0.05;
+    b.strokeStyle = '#cfffff';
+    b.lineWidth = 1;
+    for (let i = 0; i < 8; i++) {
+      b.beginPath();
+      for (let x = 0; x <= span; x += 24) {
+        const y = 12 + i * 6 + Math.sin(x * k + i) * 3;
+        x === 0 ? b.moveTo(x, y) : b.lineTo(x, y);
+      }
+      b.stroke();
+    }
+    b.restore();
+  });
+}
+function drawSeabed() {
+  const strip = seabedStrip();
+  if (!strip) {
+    // vector fallback — the game must still render with zero sprites
+    const sand = grad('sandFall', () => {
+      const g = ctx.createLinearGradient(0, FLOOR_Y, 0, H);
+      g.addColorStop(0, '#8a6f4d');
+      g.addColorStop(0.25, '#6e5739');
+      g.addColorStop(1, '#2e2114');
+      return g;
+    });
+    ctx.fillStyle = sand;
+    ctx.fillRect(-20, FLOOR_Y, W + 40, H - FLOOR_Y + 20);
+    ctx.fillStyle = 'rgba(255,235,190,0.25)';
+    ctx.fillRect(-20, FLOOR_Y, W + 40, 3);
+    return;
+  }
+  const span = seabedSpan();
+  const off = -(((scrollX * 0.9) % span) + span) % span; // (-span, 0]
+  const y = FLOOR_Y - 4;
+  ctx.drawImage(strip, off - 50, y, span, strip._ch);
+  ctx.drawImage(strip, off - 50 + span, y, span, strip._ch);
 }
 function render() {
   ctx.save();
@@ -127,48 +339,71 @@ function render() {
   // 3.5) cave roof closes in from the top (open reefs: invisible, zero cost)
   if (caveK() > 0.02) drawCaveRoof(caveK());
 
-  // 4) sandy floor with texture
-  const sand = ctx.createLinearGradient(0, FLOOR_Y, 0, H);
-  sand.addColorStop(0, '#8a6f4d');
-  sand.addColorStop(0.25, '#6e5739');
-  sand.addColorStop(1, '#2e2114');
-  ctx.fillStyle = sand;
-  ctx.fillRect(-20, FLOOR_Y, W + 40, H - FLOOR_Y + 20);
-  ctx.fillStyle = 'rgba(255,235,190,0.25)';
-  ctx.fillRect(-20, FLOOR_Y, W + 40, 3);
-  ctx.fillStyle = 'rgba(0,0,0,0.18)';
-  for (let i = 0; i < 40; i++) {
-    const sx = ((((i * 97 - scrollX * 0.9) % (W + 100)) + (W + 100)) % (W + 100)) - 50;
-    ctx.beginPath();
-    ctx.ellipse(sx, FLOOR_Y + 18 + ((i * 53) % 34), 14 + (i % 4) * 5, 3.5, 0, 0, TAU);
-    ctx.fill();
-  }
+  // 4) sandy floor — sand + lip + pebbles + caustics, all in one baked strip
+  drawSeabed();
   // cave floor lies in shadow
   if (caveK() > 0.02) {
     ctx.fillStyle = 'rgba(0,2,8,' + (0.55 * caveK()).toFixed(2) + ')';
     ctx.fillRect(-20, FLOOR_Y, W + 40, H - FLOOR_Y + 20);
   }
 
-  // 5) current bands (teal translucent)
+  // 5) current bands — a soft-edged flow lane, not a translucent green wall and NOT
+  // drawn "wave signs". v2.8 filled the FULL band (70-130px tall x whole screen) at
+  // alpha ~0.16-0.22 and drew six long wobbly squiggles descending across it: the
+  // reef went green and the squiggles read as scribbles over the art.
+  // Now: two soft edge glows mark where the lane starts and stops, and the water
+  // inside is shown MOVING — tapered comet streaks that drift with the push, bright
+  // at the leading tip and fading behind. Direction reads from the taper and the
+  // motion, not from an arrow. Cost is one fillRect per streak (no paths, no trig).
   for (const c of currents) {
     const yy = c.y + Math.sin(time * 1.3 + c.ph) * 10;
+    const half = c.h / 2;
+    const warm = c.force > 0; // pushing down/right = green, up/left = blue
     ctx.save();
-    ctx.globalAlpha = 0.16 + 0.06 * Math.sin(time * 3 + c.ph);
-    ctx.fillStyle = c.force > 0 ? '#2ee6a8' : '#4dc9ff';
-    ctx.fillRect(0, yy - c.h / 2, W, c.h);
-    ctx.globalAlpha = 0.35;
-    ctx.strokeStyle = '#dfffff';
-    ctx.lineWidth = 1.5;
-    for (let k = 0; k < 6; k++) {
-      const lx = ((((k * 220 + time * 160 * c.force) % (W + 120)) + (W + 120)) % (W + 120)) - 60;
-      ctx.beginPath();
-      for (let s = 0; s <= 20; s++) {
-        const xx = lx + s * 6;
-        const yyy =
-          yy - c.h / 2 + 8 + ((c.h - 16) * s) / 20 + Math.sin(time * 4 + s * 0.5 + c.ph) * 6;
-        s === 0 ? ctx.moveTo(xx, yyy) : ctx.lineTo(xx, yyy);
-      }
-      ctx.stroke();
+    ctx.translate(0, yy);
+    ctx.globalAlpha = 0.62 + 0.18 * Math.sin(time * 3 + c.ph);
+    // Edge glow straddles the boundary. Built in LOCAL coords after the translate,
+    // so one memoised gradient paints every band at every height (see grad()).
+    const edge = grad('curEdge' + (warm ? 'w' : 'c'), () => {
+      const rgb = warm ? '46,230,168' : '77,201,255';
+      const g = ctx.createLinearGradient(0, -15, 0, 15);
+      g.addColorStop(0, 'rgba(' + rgb + ',0)');
+      g.addColorStop(0.5, 'rgba(' + rgb + ',0.42)');
+      g.addColorStop(1, 'rgba(' + rgb + ',0)');
+      return g;
+    });
+    ctx.fillStyle = edge;
+    ctx.save();
+    ctx.translate(0, -half);
+    ctx.fillRect(0, -15, W, 30);
+    ctx.restore();
+    ctx.save();
+    ctx.translate(0, half);
+    ctx.fillRect(0, -15, W, 30);
+    ctx.restore();
+    // drifting motion streaks. One memoised gradient (tail -> tip over 0..100 local
+    // units) is stretched per streak, so length varies with no extra gradient builds.
+    const tail = grad('curStreak', () => {
+      const g = ctx.createLinearGradient(0, 0, 100, 0);
+      g.addColorStop(0, 'rgba(223,255,255,0)');
+      g.addColorStop(0.55, 'rgba(223,255,255,0.35)');
+      g.addColorStop(1, 'rgba(235,255,255,0.9)');
+      return g;
+    });
+    const span = W + 260;
+    const inset = 16;
+    for (let k = 0; k < CUR_STREAKS.length; k++) {
+      const s = CUR_STREAKS[k];
+      const lx = ((((s.o * span + time * s.v * c.force) % span) + span) % span) - 130;
+      const ly = -half + inset + (c.h - inset * 2) * s.y;
+      ctx.save();
+      ctx.translate(lx, ly);
+      ctx.globalAlpha = s.a;
+      // mirror for a leftward push so the bright tip always leads
+      ctx.scale((c.force > 0 ? 1 : -1) * (s.len / 100), 1);
+      ctx.fillStyle = tail;
+      ctx.fillRect(0, -s.w / 2, 100, s.w);
+      ctx.restore();
     }
     ctx.restore();
   }
@@ -192,24 +427,50 @@ function render() {
     drawStarfish(sx, sy, st.s, st.color, time + st.ph);
   }
   drawCrabs();
+  // 6b) seabed boulders — solid terrain, drawn in front of the seabed decor so
+  // nothing pokes through the rock. One cached blit each (see sprites.js).
+  for (const b of boulders) {
+    if (b.x < -220 || b.x > W + 240) continue;
+    drawBoulder(b);
+  }
+  // 6c) sea urchins (per-biome signature hazard) — drawn with the seabed so the
+  // spiny cluster sits ON the floor, below the entities that swim over it
+  for (const u of urchins) {
+    if (u.x < -220 || u.x > W + 240) continue;
+    drawUrchin(u);
+  }
 
   // 7) finish gate
   if (gate) drawGate(gate.x);
 
-  // 8) pearls & powerups
-  for (const pl of pearlsArr) drawPearl(pl);
-  for (const pw of powers) drawPower(pw);
+  // 8-10) entities. Everything below is culled first: an object one screen to the
+  // right of the viewport still costs a full gradient fill + 30 path ops if you hand
+  // it to the rasteriser, and hazards spawn ~200px off-screen and linger ~100px past
+  // the left edge, so on a phone a third of the live entities are off-camera. The
+  // margins are per-type: a hook's line reaches up to the surface, a net is 110 tall,
+  // a shark is up to 180 long.
+  for (const pl of pearlsArr) if (pl.x > -30 && pl.x < W + 30) drawPearl(pl);
+  for (const pw of powers) if (pw.x > -40 && pw.x < W + 40) drawPower(pw);
 
-  // 9) hooks & nets (behind fish)
-  for (const hk of hooks) drawHook(hk);
-  for (const n of nets) drawNet(n);
+  // hooks & nets (behind fish)
+  for (const hk of hooks) if (hk.x > -60 && hk.x < W + 60) drawHook(hk);
+  for (const n of nets) if (n.x > -110 && n.x < W + 110) drawNet(n);
 
-  // 10) jellies & predators
-  for (const j of jellies) drawJelly(j);
-  for (const f of fries) drawFry(f, -1);
+  // jellies & predators
+  for (const j of jellies) if (j.x > -60 && j.x < W + 60) drawJelly(j);
+  for (const f of fries) if (f.x > -30 && f.x < W + 30) drawFry(f, -1);
   for (const p of predators) {
+    if (p.x < -200 || p.x > W + 220) continue;
     drawPredator(p);
     if (p.lunge > 0) drawStrikeAlert(p); // red "!" while it winds up — your cue to move
+  }
+
+  // boss (phase A): one boss, drawn with the entities so it sits behind Nemo but
+  // above the seabed; its shots ride beneath the player too
+  if (typeof Boss !== 'undefined' && Boss.active()) {
+    drawBoss();
+    for (const s of Boss.shots())
+      if (s.x > -30 && s.x < W + 30) drawBossShot(s);
   }
 
   // 11) Nemo — ALWAYS drawn while a run is live so he can never "get lost"
@@ -313,19 +574,7 @@ function render() {
   {
     ctx.fillStyle = 'rgba(140,220,255,0.10)';
     ctx.fillRect(-20, 0, W + 40, 10 + Math.sin(time * 2) * 3);
-    ctx.save();
-    ctx.globalAlpha = 0.05;
-    ctx.strokeStyle = '#cfffff';
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 8; i++) {
-      ctx.beginPath();
-      for (let x = 0; x <= W; x += 24) {
-        const y = FLOOR_Y + 8 + i * 6 + Math.sin(x * 0.05 + time * 2 + i) * 3;
-        x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-    ctx.restore();
+    // (floor caustics moved into the baked seabed strip — see drawSeabed)
   }
   if (!bgCache) {
     const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.85);
@@ -335,24 +584,36 @@ function render() {
     ctx.fillRect(-20, -20, W + 40, H + 40);
   }
 
-  // status effects ring
-  if (player.slow > 0) {
-    ctx.strokeStyle = 'rgba(125,255,196,0.5)';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(player.x, player.y, 34 + Math.sin(time * 6) * 3, 0, TAU);
-    ctx.stroke();
-  }
-  if (player.magnet > 0) {
-    ctx.strokeStyle = 'rgba(255,159,243,0.45)';
-    ctx.setLineDash([8, 8]);
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(player.x, player.y, 60, time, time + TAU);
-    ctx.stroke();
-    ctx.setLineDash([]);
+  // ONE status ring, segmented by buff. v2.8 drew a pulsing r34 ring for slow AND a
+  // rotating dashed r60 ring for magnet AND the r44 tracker glow AND "▼ YOU" — four
+  // overlapping circles around a 17px fish, so with both buffs up the player was the
+  // least readable thing on screen. Now each live buff owns an arc of the same r34
+  // circle (shield is excluded: it already has its own bubble on the body), and the
+  // arc blinks over its last 1.6s so expiry is something you can see coming.
+  {
+    const ring = [];
+    if (player.slow > 0) ring.push(['rgba(125,255,196,0.75)', player.slow]);
+    if (player.magnet > 0) ring.push(['rgba(255,159,243,0.7)', player.magnet]);
+    if (ring.length) {
+      const r = 32 + Math.sin(time * 5) * 2;
+      const seg = TAU / ring.length;
+      const spin = time * 0.8;
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      for (let i = 0; i < ring.length; i++) {
+        const left = ring[i][1];
+        // final 1.6s: blink at 6Hz. Skipping the stroke is the blink — no alpha maths.
+        if (left < 1.6 && ((time * 6) | 0) % 2 === 0) continue;
+        ctx.strokeStyle = ring[i][0];
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, r, spin + i * seg + 0.16, spin + (i + 1) * seg - 0.16);
+        ctx.stroke();
+      }
+      ctx.lineCap = 'butt';
+    }
   }
   if (state === 'menu') drawDemoFish(); // opening screen: meet your fish, see snacks swim by
+  if (typeof Boss !== 'undefined' && Boss.active()) drawBossCue(); // dodge tell, topmost
   drawPlayerMarker(); // topmost layer: nothing on canvas may ever cover Nemo's tracker
 
   ctx.restore();
@@ -373,27 +634,221 @@ function render() {
     ctx.fillText(f.txt, f.x, f.y);
   }
   ctx.restore();
+  if (PERF.on) drawPerfOverlay();
 }
 
-// Golden tracking glow + "YOU" arrow so Nemo never blends in or gets "lost"
+// Golden tracking glow so Nemo never blends in or gets "lost". The "▼ YOU" label
+// fades out after the first 6s of a run: it is orientation, and once you have found
+// your fish it is just another thing floating over the play area.
 function drawPlayerMarker() {
   if ((state !== 'playing' && state !== 'paused') || player.dead) return;
   const y = clamp(player.y, 20, H - 20);
   ctx.save();
-  const gl = ctx.createRadialGradient(player.x, y, 4, player.x, y, 44);
-  gl.addColorStop(0, 'rgba(255,200,90,0.30)');
-  gl.addColorStop(1, 'rgba(255,200,90,0)');
-  ctx.fillStyle = gl;
-  ctx.beginPath();
-  ctx.arc(player.x, y, 44, 0, TAU);
-  ctx.fill();
-  ctx.globalAlpha = 0.9;
-  ctx.fillStyle = '#ffd66e';
-  ctx.font = '900 11px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText('▼ YOU', player.x, y - 34 + Math.sin(time * 4) * 3);
+  // was a per-frame createRadialGradient — now one cached bitmap (see sprites.js)
+  const gl = glowSprite('255,200,90', 44, 0.3);
+  if (!blit(gl, player.x, y)) {
+    ctx.fillStyle = 'rgba(255,200,90,0.18)';
+    ctx.beginPath();
+    ctx.arc(player.x, y, 30, 0, TAU);
+    ctx.fill();
+  }
+  const fade = clamp(7 - elapsed, 0, 1); // full until 6s, gone by 7s
+  if (fade > 0.01) {
+    ctx.globalAlpha = 0.9 * fade;
+    ctx.fillStyle = '#ffd66e';
+    ctx.font = '900 11px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('▼ YOU', player.x, y - 34 + Math.sin(time * 4) * 3);
+  }
   ctx.restore();
 }
+// ---------- seabed boulders ----------
+// The rock body is drawn from world.js `rockProfile()` — the SAME curve update.js
+// collides against, so what you see is exactly what blocks you. It is baked once per
+// size bucket into an offscreen sprite: rounding w/h to 8px buckets means a whole
+// run reuses a handful of bitmaps instead of re-walking ~40 path points per rock
+// per frame. On screen a boulder therefore costs one drawImage.
+// Tints are deliberately LIGHTER than a literal rock: the water fog and the dark
+// blue background already sink anything mid-grey toward black, and the first pass
+// (#5c5f68 → #282b32) read as a hole cut in the screen. These sit between the sand
+// (#8a6f4d) and the water so the rock belongs to the seabed.
+const ROCK_TINT = [
+  ['#96a0ad', '#697384', '#4b5164'], // grey granite
+  ['#a89279', '#7b6450', '#574538'], // brown sandstone
+  ['#82949b', '#57676f', '#3c4a50'], // wet basalt
+];
+function boulderSprite(b) {
+  const w = Math.max(24, Math.round(b.w / 8) * 8);
+  const h = Math.max(16, Math.round(b.h / 8) * 8);
+  const pad = 6; // room for the rim light to sit inside the bitmap
+  return sprite('rock' + b.type + b.tint + '|' + w + '|' + h, w + pad * 2, h + pad, (g, cw, ch) => {
+    const col = ROCK_TINT[b.tint] || ROCK_TINT[0];
+    const baseY = ch;
+    const cx = cw / 2;
+    // Silhouette = the collision curve, with a per-type deterministic erosion that
+    // only ever CARVES INTO it (`1 - max(0, n)`), never bulges out of it — so the
+    // drawn rock can never poke above the surface the fish is standing on.
+    const bump = (t) => {
+      const n =
+        b.type === 0
+          ? 0.07 * Math.sin(t * 6.3) + 0.045 * Math.sin(t * 11.1)
+          : b.type === 1
+            ? 0.06 * Math.sin(t * 4.4 + 1.1) - 0.055
+            : 0.05 * Math.sin(t * 9.2 + 2.3) + 0.06 * Math.sin(t * 5.5) - 0.038;
+      return rockProfile(t) * (1 - Math.max(0, n));
+    };
+    g.beginPath();
+    g.moveTo(cx - w / 2 - pad * 0.4, baseY);
+    for (let i = 0; i <= 40; i++) {
+      const t = -1 + (2 * i) / 40;
+      g.lineTo(cx + t * (w / 2), baseY - h * bump(t));
+    }
+    g.lineTo(cx + w / 2 + pad * 0.4, baseY);
+    g.closePath();
+    const lin = g.createLinearGradient(0, baseY - h, 0, baseY);
+    lin.addColorStop(0, col[0]);
+    lin.addColorStop(0.5, col[1]);
+    lin.addColorStop(1, col[2]);
+    g.fillStyle = lin;
+    g.fill();
+    g.save();
+    g.clip();
+    // rim light on the sunlit (upper-left) shoulder — this is what makes a flat
+    // silhouette read as a three-dimensional rock
+    g.strokeStyle = 'rgba(206,236,246,0.4)';
+    g.lineWidth = 2;
+    g.beginPath();
+    for (let i = 0; i <= 20; i++) {
+      const t = -0.96 + (i / 20) * 1.1;
+      const yy = baseY - h * bump(t) + 1.2;
+      i === 0 ? g.moveTo(cx + t * (w / 2), yy) : g.lineTo(cx + t * (w / 2), yy);
+    }
+    g.stroke();
+    // a few darker pits + pale barnacles so the surface is not a flat wash
+    for (let i = 0; i < 7; i++) {
+      const t = -0.8 + (i / 6) * 1.6;
+      const top = baseY - h * bump(t);
+      const py = top + (baseY - top) * (0.25 + ((i * 37) % 60) / 100);
+      g.fillStyle = i % 2 ? 'rgba(30,22,10,0.16)' : 'rgba(226,240,236,0.18)';
+      g.beginPath();
+      g.ellipse(cx + t * (w / 2), py, 3 + (i % 3) * 2.2, 2 + (i % 2) * 1.6, 0, 0, TAU);
+      g.fill();
+    }
+    // sand skirt: the seabed has drifted up against the base, so the rock reads as
+    // half-BURIED instead of pasted on top of the floor
+    const skirt = Math.min(h * 0.4, 34);
+    const sk = g.createLinearGradient(0, baseY - skirt, 0, baseY);
+    sk.addColorStop(0, 'rgba(138,111,77,0)');
+    sk.addColorStop(1, 'rgba(146,118,80,0.7)');
+    g.fillStyle = sk;
+    g.fillRect(0, baseY - skirt, cw, skirt);
+    g.restore();
+  });
+}
+function drawBoulder(b) {
+  const img = boulderSprite(b);
+  // contact shadow in the sand: sells the rock as sitting ON the seabed
+  ctx.save();
+  ctx.globalAlpha = 0.2;
+  ctx.fillStyle = '#1a1208';
+  ctx.beginPath();
+  ctx.ellipse(b.x, FLOOR_Y + 4, b.w * 0.52, 7, 0, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+  if (img) ctx.drawImage(img, b.x - img._cw / 2, FLOOR_Y + 6 - img._ch, img._cw, img._ch);
+  else {
+    ctx.fillStyle = '#697384';
+    ctx.beginPath();
+    ctx.ellipse(b.x, FLOOR_Y, b.w * 0.5, b.h, 0, Math.PI, TAU);
+    ctx.fill();
+  }
+  // scrape puff while the player is riding the crown
+  if (b.ride > 0) {
+    ctx.save();
+    ctx.globalAlpha = clamp(b.ride * 2, 0, 0.5);
+    ctx.fillStyle = '#cfe9ee';
+    ctx.beginPath();
+    ctx.arc(player.x - 6, player.y + player.r * 0.7, 5 + (0.35 - b.ride) * 20, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ---------- sea urchins ----------
+// A urchin reads as HARMFUL where a boulder reads as CLIMBABLE, and the look must
+// say so at a glance. Three tells, all drawn into one baked bitmap so an on-screen
+// cluster costs one drawImage the same as a boulder: (1) a low dark body (curved,
+// unlike the rock's smooth mound, so a "ride over" read is suppressed), (2) radial
+// needle spines poking upward like a paintbrush, (3) slightly reddish violet body —
+// the palette the game reserves for "stings" (jelly bells, the end of a hook) so
+// the colour by itself says don't touch. Spines are deterministic per-cluster
+// (seeded by the tint+size bucket), so the bitmap caches and never stalls.
+const URCH_TINT = [
+  ['#2a2735', '#16131d', '#0c0a12'], // charcoal violet
+  ['#35222e', '#1c1119', '#0f0a10'], // aubergine
+  ['#262432', '#131019', '#0a080e'], // slate violet
+];
+function urchinSprite(u) {
+  const w = Math.max(40, Math.round(u.w / 8) * 8);
+  const h = Math.max(24, Math.round(u.h / 8) * 8);
+  return sprite('urch' + u.tint + '|' + w + '|' + h, w, h + 8, (g, cw, ch) => {
+    const col = URCH_TINT[u.tint] || URCH_TINT[0];
+    const cx = cw / 2;
+    const baseY = ch - 6; // the sand skirt sits at the very bottom
+    // radial spines: a fan of thin tapered triangles from just under the crown
+    g.strokeStyle = 'rgba(205,215,255,0.5)';
+    g.lineCap = 'round';
+    const spineN = 9;
+    for (let i = 0; i < spineN; i++) {
+      const a = -Math.PI * (0.08 + (0.84 * i) / (spineN - 1)); // left to right over the crown
+      const len = h * (0.86 + ((i * 53) % 29) / 100);
+      const x0 = cx - w * 0.4 + (w * 0.8 * i) / (spineN - 1);
+      g.lineWidth = 2.2;
+      g.beginPath();
+      g.moveTo(x0, baseY - h * 0.18);
+      g.lineTo(x0 + Math.cos(a) * len * 0.7, baseY - h * 0.18 + Math.sin(a) * -len);
+      g.stroke();
+    }
+    // dark curved body (an arc, not a mound — see comment above)
+    g.fillStyle = col[0];
+    g.beginPath();
+    g.ellipse(cx, baseY - h * 0.18, w * 0.36, h * 0.46, 0, Math.PI, TAU);
+    g.fill();
+    g.fillStyle = col[1];
+    g.beginPath();
+    g.ellipse(cx, baseY - h * 0.12, w * 0.3, h * 0.34, 0, Math.PI, TAU);
+    g.fill();
+    // top-highlight so the body does not read as a hole
+    g.fillStyle = 'rgba(168,120,180,0.35)';
+    g.beginPath();
+    g.ellipse(cx - w * 0.08, baseY - h * 0.34, w * 0.14, h * 0.16, -0.4, 0, TAU);
+    g.fill();
+    // sand skirt at the base (half-buried like the rocks)
+    const sk = g.createLinearGradient(0, baseY - 6, 0, baseY);
+    sk.addColorStop(0, 'rgba(138,111,77,0)');
+    sk.addColorStop(1, 'rgba(146,118,80,0.75)');
+    g.fillStyle = sk;
+    g.fillRect(0, baseY - 6, cw, 6);
+  });
+}
+function drawUrchin(u) {
+  const img = urchinSprite(u);
+  if (img) {
+    // a small red halo sells the "harm" at a glance — the same cue jellies use
+    const halo = glowSprite('214,90,110', 30, 0.6);
+    ctx.save();
+    ctx.globalAlpha = 0.5 + Math.sin(u.ph + time * 2) * 0.18;
+    blit(halo, u.x, FLOOR_Y + 2 - u.h * 0.5, 0.9);
+    ctx.restore();
+    ctx.drawImage(img, u.x - img._cw / 2, FLOOR_Y + 8 - img._ch, img._cw, img._ch);
+  } else {
+    ctx.fillStyle = '#16131d';
+    ctx.beginPath();
+    ctx.ellipse(u.x, FLOOR_Y, u.w * 0.36, u.h * 0.46, 0, Math.PI, TAU);
+    ctx.fill();
+  }
+}
+
 // ---------- procedural character art ----------
 // gradient memo: body paints use local coords (set after translate), so one cached
 // gradient paints identically every frame — zero GC churn, zero visual change.
@@ -828,7 +1283,7 @@ function drawFry(f, dir) {
   ctx.beginPath();
   ctx.ellipse(0, 0, 10, 4.5, 0, 0, TAU);
   ctx.fill();
-  const wag = Math.sin(f.ph) * 0.5;
+  const wag = (f.s != null ? f.s : Math.sin(f.ph)) * 0.5;
   ctx.save();
   ctx.translate(-9, 0);
   ctx.rotate(wag * 0.6);
@@ -911,8 +1366,10 @@ function drawPredator(p) {
   ctx.scale(dir, 1);
   const s = p.size / 110; // normalize
   ctx.scale(s, s);
-  ctx.rotate(Math.sin(p.ph * 0.9) * 0.045); // body rolls as it swims
-  const swim = Math.sin(p.ph) * 6;
+  // pitch (the body angles along its own velocity — update.js) + the swim roll, as
+  // ONE rotate. Applied after the mirror flip, so +pitch is nose-down on screen.
+  ctx.rotate((p.pitch || 0) + p.s * 0.045);
+  const swim = p.s * 6;
   if (p.type === 'shark') {
     // body
     const g = grad('esharkBody', () => {
@@ -933,7 +1390,7 @@ function drawPredator(p) {
     // tail
     ctx.save();
     ctx.translate(-58, 0);
-    ctx.rotate(Math.sin(p.ph) * 0.4);
+    ctx.rotate(p.s * 0.4);
     ctx.fillStyle = '#42586e';
     ctx.beginPath();
     ctx.moveTo(0, 0);
@@ -1011,11 +1468,11 @@ function drawPredator(p) {
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(30, -22);
-    ctx.quadraticCurveTo(52, -46, 66, -30 + Math.sin(p.ph) * 4);
+    ctx.quadraticCurveTo(52, -46, 66, -30 + p.s * 4);
     ctx.stroke();
     ctx.fillStyle = '#cffff0';
     const lureImg = getLureSprite();
-    const lureY = -30 + Math.sin(p.ph) * 4;
+    const lureY = -30 + p.s * 4;
     if (lureImg) ctx.drawImage(lureImg, 66 - 15, lureY - 15, 30, 30);
     else {
       ctx.beginPath();
@@ -1026,7 +1483,7 @@ function drawPredator(p) {
     ctx.fillStyle = '#241a2e';
     ctx.save();
     ctx.translate(-50, 0);
-    ctx.rotate(Math.sin(p.ph) * 0.5);
+    ctx.rotate(p.s * 0.5);
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.lineTo(-22, -14);
@@ -1093,7 +1550,7 @@ function drawPredator(p) {
     ctx.fill();
     ctx.save();
     ctx.translate(-52, 0);
-    ctx.rotate(Math.sin(p.ph) * 0.45);
+    ctx.rotate(p.s * 0.45);
     ctx.fillStyle = '#1d4e72';
     ctx.beginPath();
     ctx.moveTo(0, 0);
@@ -1150,8 +1607,12 @@ function drawPredator(p) {
 
 function drawJelly(j) {
   ctx.save();
-  ctx.translate(j.x, j.y + Math.sin(j.ph) * 4);
-  const squash = 1 + Math.sin(j.ph) * 0.12;
+  // s/c/s3/c3 are cached by update.js. Everything below that used to be a Math.sin
+  // is now an angle-sum identity over them: sin(ph+k) = s·cos(k) + c·sin(k), with
+  // cos(k)/sin(k) constant per tentacle (TENT_C/TENT_S). 12 trig calls per jelly
+  // per frame -> 0 in render, 4 in update.
+  ctx.translate(j.x, j.y + j.s * 4);
+  const squash = 1 + j.s * 0.12;
   ctx.scale(1, squash);
   const jr = Math.round(j.r);
   const g = grad('jelly' + jr, () => {
@@ -1171,17 +1632,18 @@ function drawJelly(j) {
   ctx.lineWidth = 1.5;
   ctx.stroke();
   ctx.strokeStyle = 'rgba(255,160,210,0.7)';
-  for (let i = -2; i <= 2; i++) {
-    ctx.beginPath();
-    ctx.moveTo(i * j.r * 0.32, j.r * 0.1);
+  ctx.beginPath(); // all five tentacles in ONE path = one stroke, not five
+  for (let i = 0; i < 5; i++) {
+    const off = (i - 2) * j.r * 0.32;
+    ctx.moveTo(off, j.r * 0.1);
     ctx.quadraticCurveTo(
-      i * j.r * 0.32 + Math.sin(j.ph + i) * 8,
+      off + (j.s * TENT_C[i] + j.c * TENT_S[i]) * 8,
       j.r * 0.9,
-      i * j.r * 0.32 + Math.sin(j.ph * 1.3 + i) * 10,
+      off + (j.s3 * TENT_C[i] + j.c3 * TENT_S[i]) * 10,
       j.r * 1.5,
     );
-    ctx.stroke();
   }
+  ctx.stroke();
   ctx.fillStyle = 'rgba(255,255,255,0.8)';
   ctx.beginPath();
   ctx.arc(-j.r * 0.3, -j.r * 0.4, 3, 0, TAU);
@@ -1466,9 +1928,15 @@ function drawCaveRoof(k) {
   // Alpha scales with caveK so open reefs are untouched. Parallax 0.9.
   const roofH = 46 + 78 * k;
   ctx.save();
-  const g = ctx.createLinearGradient(0, 0, 0, roofH + 30);
-  g.addColorStop(0, 'rgba(2,5,9,' + (0.55 + 0.45 * k).toFixed(2) + ')');
-  g.addColorStop(1, 'rgba(8,14,22,' + (0.35 + 0.55 * k).toFixed(2) + ')');
+  // memoised on a 0.05 bucket of k: the roof darkens as you descend, but rebuilding
+  // the gradient every frame for a change the eye cannot see is pure waste
+  const kb = Math.round(k * 20) / 20;
+  const g = grad('caveRoof' + kb, () => {
+    const gg = ctx.createLinearGradient(0, 0, 0, 46 + 78 * kb + 30);
+    gg.addColorStop(0, 'rgba(2,5,9,' + (0.55 + 0.45 * kb).toFixed(2) + ')');
+    gg.addColorStop(1, 'rgba(8,14,22,' + (0.35 + 0.55 * kb).toFixed(2) + ')');
+    return gg;
+  });
   ctx.fillStyle = g;
   ctx.fillRect(-20, -10, W + 40, roofH + 10);
   for (const t of caveTeeth) {
@@ -1581,11 +2049,15 @@ function drawGate(x) {
   const gy = H / 2 - 20;
   ctx.save();
   ctx.translate(x, 0);
-  // glow
-  const glow = ctx.createLinearGradient(0, 80, 0, H - 60);
-  glow.addColorStop(0, 'rgba(61,245,166,0)');
-  glow.addColorStop(1, 'rgba(61,245,166,0.35)');
-  ctx.fillStyle = glow;
+  // glow — memoised: built in gate-local coords after the translate, so one cached
+  // gradient paints the gate wherever it is on screen (the last per-frame gradient
+  // in the renderer; ?perf=2 now reports grads 0)
+  ctx.fillStyle = grad('gateGlow', () => {
+    const g = ctx.createLinearGradient(0, 80, 0, H - 60);
+    g.addColorStop(0, 'rgba(61,245,166,0)');
+    g.addColorStop(1, 'rgba(61,245,166,0.35)');
+    return g;
+  });
   ctx.fillRect(-70, 80, 140, H);
   // two coral pillars
   drawCoral(-52, FLOOR_Y, 1.6, 0, time);

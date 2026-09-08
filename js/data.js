@@ -31,7 +31,7 @@ const LEVELS = [
     speed: 172,
     pred: 2.1,
     jelly: 4.5,
-    net: 5.0,
+    net: 7.5,
     hook: 0,
     fry: 1.5,
     power: 9,
@@ -48,7 +48,7 @@ const LEVELS = [
     speed: 180,
     pred: 1.9,
     jelly: 3.8,
-    net: 4.2,
+    net: 7,
     hook: 5.5,
     fry: 1.4,
     power: 9,
@@ -65,7 +65,7 @@ const LEVELS = [
     speed: 188,
     pred: 1.7,
     jelly: 3.4,
-    net: 3.8,
+    net: 6.8,
     hook: 4.8,
     fry: 1.3,
     power: 9,
@@ -82,7 +82,7 @@ const LEVELS = [
     speed: 196,
     pred: 1.55,
     jelly: 3.2,
-    net: 3.4,
+    net: 6.5,
     hook: 4.4,
     fry: 1.2,
     power: 9,
@@ -99,7 +99,7 @@ const LEVELS = [
     speed: 190,
     pred: 1.75,
     jelly: 3.6,
-    net: 4.2,
+    net: 7.2,
     hook: 5.0,
     fry: 1.2,
     power: 8,
@@ -116,7 +116,7 @@ const LEVELS = [
     speed: 200,
     pred: 1.45,
     jelly: 3.0,
-    net: 3.4,
+    net: 6.5,
     hook: 4.2,
     fry: 1.1,
     power: 8,
@@ -133,7 +133,7 @@ const LEVELS = [
     speed: 208,
     pred: 1.35,
     jelly: 2.8,
-    net: 2.8,
+    net: 6,
     hook: 3.8,
     fry: 1.0,
     power: 8,
@@ -150,7 +150,7 @@ const LEVELS = [
     speed: 215,
     pred: 1.2,
     jelly: 2.6,
-    net: 2.8,
+    net: 6,
     hook: 3.5,
     fry: 1.0,
     power: 8,
@@ -167,7 +167,7 @@ const LEVELS = [
     speed: 222,
     pred: 1.1,
     jelly: 2.4,
-    net: 2.6,
+    net: 5.8,
     hook: 3.2,
     fry: 0.9,
     power: 8,
@@ -184,7 +184,7 @@ const LEVELS = [
     speed: 218,
     pred: 1.25,
     jelly: 2.6,
-    net: 2.8,
+    net: 6,
     hook: 3.4,
     fry: 1.0,
     power: 8,
@@ -202,7 +202,7 @@ const LEVELS = [
     speed: 224,
     pred: 1.2,
     jelly: 2.5,
-    net: 2.7,
+    net: 5.9,
     hook: 3.3,
     fry: 1.0,
     power: 8,
@@ -220,7 +220,7 @@ const LEVELS = [
     speed: 230,
     pred: 1.15,
     jelly: 2.4,
-    net: 2.6,
+    net: 5.8,
     hook: 3.2,
     fry: 0.95,
     power: 8,
@@ -238,7 +238,7 @@ const LEVELS = [
     speed: 236,
     pred: 1.1,
     jelly: 2.3,
-    net: 2.5,
+    net: 5.6,
     hook: 3.1,
     fry: 0.9,
     power: 8,
@@ -256,7 +256,7 @@ const LEVELS = [
     speed: 242,
     pred: 1.05,
     jelly: 2.2,
-    net: 2.4,
+    net: 5.5,
     hook: 3.0,
     fry: 0.9,
     power: 8,
@@ -281,18 +281,31 @@ function levelConfig(n) {
     jellyEvery: off(L.jelly),
     netEvery: off(L.net),
     hookEvery: off(L.hook),
-    pearlEvery: 1.1,
+    pearlEvery: 2.6, // one readable LINE of 3-5 pearls, not a scattered single
     powerEvery: L.power,
     fryEvery: L.fry,
-    cur: L.cur,
+    // max 2 current bands (was up to 3): three full-width translucent bands read
+    // as green stripes across the whole screen and buried the reef behind them
+    cur: Math.min(2, L.cur),
     curStr: L.curStr,
     hungry: L.hungry,
     sharkW: L.sharkW,
     anglerW: L.anglerW,
     first: L.first,
     cave: L.cave || 0, // 0 = open reef, →1 = deep cave (darker + narrower)
+    // Spawn Director budget: total weight of live hazards allowed on screen
+    // (shark/angler 3, big 2, net 3, hook 2, jelly 1). Reef 1 at 2 means one
+    // hunter and nothing else; reef 15 at 8 is a genuinely busy screen but still
+    // a countable one.
+    threatMax: Math.min(8, 2 + Math.floor((clamp(Math.round(n) || 1, 1, MAX_LEVEL) - 1) * 0.5)),
     predSpeedMul: Math.min(1.8, 1 + (n - 1) * 0.08), // capped so cave stays fair
     hunterBrain: n >= 2, // predators steer toward player
+    // which biome owns this reef — drives the water palette, decor weights and
+    // rock tint (see js/biomes.js). setActiveBiome is called from startWave.
+    biome: biomeAt(n),
+    // the last reef of a biome ends in a boss fight, not a gate (see js/bosses.js).
+    // One boss per biome: 3, 6, 8, 10, 12, 15.
+    boss: typeof isBossLevel === 'function' && isBossLevel(n),
   };
 }
 // Endless Reef: tier rises every 900m, all curves capped so runs stay fair, never impossible.
@@ -311,18 +324,19 @@ function endlessCfg(dist) {
     speed: Math.min(300, from(170, 195) + tier * 9),
     predEvery: Math.max(0.85, from(2.4, 1.9) - tier * 0.09),
     jellyEvery: Math.max(1.8, from(4.5, 3.6) - tier * 0.16),
-    netEvery: Math.max(2.0, from(5.0, 3.8) - tier * 0.16),
+    netEvery: Math.max(4.5, from(7.5, 6.2) - tier * 0.16),
     hookEvery: Math.max(2.6, from(6.0, 4.6) - tier * 0.16),
-    pearlEvery: 1.1,
+    pearlEvery: 2.6,
     powerEvery: 8,
     fryEvery: 1.0,
-    cur: Math.min(3, Math.floor(tier / 2)),
+    cur: Math.min(2, Math.floor(tier / 2)),
     curStr: from(150, 180) + tier * 8,
     hungry: Math.min(0.9, from(0.25, 0.4) + tier * 0.05),
     sharkW: Math.min(0.3, from(0.02, 0.1) + tier * 0.02),
     anglerW: Math.min(0.3, from(0, 0.1) + tier * 0.02),
     first: 1.2,
     cave,
+    threatMax: Math.min(8, 3 + tier), // see levelConfig
     predSpeedMul: 1 + tier * 0.03,
     hunterBrain: true,
     endless: true,
@@ -360,7 +374,7 @@ function updatePlayBtn() {
 }
 
 // ---------- fish roster: unlock bigger fish with gems; bigger fish eat smaller ones ----------
-const VERSION = '2.8';
+const VERSION = '3.1';
 const FISHES = [
   {
     id: 'nemo',
@@ -489,34 +503,48 @@ function renderLevels() {
     (crowned ? MAX_LEVEL : Math.min(maxLevel - 1, MAX_LEVEL)) +
     '/' +
     MAX_LEVEL;
-  LEVELS.forEach((L, i) => {
-    const n = i + 1;
-    const unlocked = n <= maxLevel;
-    const cleared = n < maxLevel;
-    const card = document.createElement('div');
-    card.className =
-      'lvCard' +
-      (cleared ? ' done' : n === maxLevel ? ' current' : '') +
-      (unlocked ? '' : ' locked');
-    card.innerHTML =
-      '<b>' +
-      n +
-      '</b><span>' +
-      L.name +
-      '</span><em>' +
-      (cleared ? '✅' : unlocked ? '▶' : '🔒') +
-      '</em>';
-    if (unlocked)
-      card.onclick = (() => {
-        const lv = n;
-        return () => {
-          AudioSys.ensure();
-          AudioSys.click();
-          startLevel(lv);
-        };
-      })();
-    else card.onclick = () => AudioSys.locked();
-    g.appendChild(card);
+  // Group the reefs into their biomes, in swim order, so the picker reads as a
+  // journey — Sunlit first, The Abyss last — rather than 15 identical squares.
+  // The final reef of each biome carries a boss marker (see js/bosses.js).
+  const zones = typeof BIOME_ZONES !== 'undefined' ? BIOME_ZONES : [[1, MAX_LEVEL, 'sunlit']];
+  zones.forEach(([a, b, key]) => {
+    const head = document.createElement('div');
+    head.className = 'biomeHead';
+    head.textContent = biomeName(a); // 'Sunlit Reef', 'Kelp Forest', …
+    g.appendChild(head);
+    for (let n = a; n <= b; n++) {
+      const L = LEVELS[n - 1];
+      const unlocked = n <= maxLevel;
+      const cleared = n < maxLevel;
+      const isBoss = typeof isBossLevel === 'function' && isBossLevel(n);
+      const card = document.createElement('div');
+      card.className =
+        'lvCard' +
+        (cleared ? ' done' : n === maxLevel ? ' current' : '') +
+        (unlocked ? '' : ' locked') +
+        (isBoss ? ' boss' : '');
+      card.innerHTML =
+        '<b>' +
+        n +
+        (isBoss ? ' <em class="bossTag">👑</em>' : '') +
+        '</b><span>' +
+        L.name +
+        (isBoss ? '<em class="bossSub">BOSS REEF</em>' : '') +
+        '</span><em>' +
+        (cleared ? '✅' : unlocked ? '▶' : '🔒') +
+        '</em>';
+      if (unlocked)
+        card.onclick = (() => {
+          const lv = n;
+          return () => {
+            AudioSys.ensure();
+            AudioSys.click();
+            startLevel(lv);
+          };
+        })();
+      else card.onclick = () => AudioSys.locked();
+      g.appendChild(card);
+    }
   });
   const e = document.createElement('div');
   e.className = 'lvCard endless' + (endlessUnlocked ? ' current' : ' locked');

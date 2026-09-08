@@ -11,6 +11,28 @@ pearls, 3 powerups, Coral Gate, procedural art + audio, juice (shake/slow-mo/com
 - [ ] Owner: publish to GitHub Pages (repo exists!) → real install test on phone.
       Menu must show **v2.1**.
 
+## Phase 4 — the scope release (v3.0, DONE ✅)
+Owner asked for *"plan something big, make the scope look big"* — six biomes, an adaptive
+score, seabed boulders, real animal physics, a clutter ceiling and a bigger perf budget.
+Everything landed in v3.0; see `CHANGELOG.md`.
+- [x] **Biomes** (`js/biomes.js`): Sunlit Reef / Kelp Forest / Shipwreck Graveyard /
+      Jellyfish Bloom / Volcanic Vents / The Abyss. Palette data only — zero frame cost.
+- [x] **Adaptive score**: generated in `musicInit()`, driven by the Director's live threat
+      weight, 82 → 104 BPM. No mp3 any more.
+- [x] **Seabed boulders** (request: *"stones the fish can't cross, so move over them"*),
+      fair by construction (shared collision/art profile, capped at 3).
+- [x] **Cage frequency** fixed (starvation override + authored waves; 9.2 s min gap).
+- [x] **Animal physics**: velocity-driven hunters/jellies/fry, derived body pitch.
+- [x] **Clutter ceiling** ~110 → 27 live objects.
+- [x] **Perf**: baked seabed strip, memoised cave-roof + gate gradients, off-screen culls,
+      zero per-frame gradients, 3554 → ~2100 draw ops. New `?perf=1` / `?perf=2` overlay.
+
+## Phase 5 — plausible next (not started)
+- Per-biome score colour (Abyss whole-tone, Vents phrygian) — see `AUDIO.md §7`.
+- Boss angler with an HP-driven music layer.
+- Hazards per biome: urchins in the reef, moray lunges in the wreck, ink in the vents.
+- The `?perf=2` overlay is the measurement rig — keep the budget under ~2000 ops/frame.
+
 ## Levels vs endless — RESEARCH VERDICT: HYBRID (don't drop either)
 Researched Sept 2026 (runner market + difficulty-curve literature). Evidence:
 - **Endless owns the genre** (~52% of runner revenue; Subway Surfers/Temple Run): best

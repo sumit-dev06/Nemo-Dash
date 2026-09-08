@@ -29,7 +29,7 @@ let predators = [],
   floaters = [],
   currents = [],
   fries = [];
-let spawnT = { pred: 1, jelly: 2.5, net: 3, hook: 4, pearl: 0.5, power: 7, fry: 1 };
+let spawnT = { pred: 1, jelly: 2.5, net: 3, hook: 4, pearl: 0.5, power: 7, fry: 1, urch: 3 };
 let midMagnet = false, // guaranteed mid-run magnet drop (once per reef / endless tier)
   midHeart = false; // guaranteed mid-run heart drop (harder reefs only, never frequent)
 let gate = null;
@@ -38,6 +38,8 @@ let seaweeds = [],
   rocksFar = [],
   caveTeeth = [],
   starfish = [],
+  boulders = [], // solid seabed rocks the fish must swim OVER (see world.js)
+  urchins = [], // shallow-reef spikes on the seabed — LETHAL on contact (see world.js)
   snow = [];
 let boatX = 0;
 

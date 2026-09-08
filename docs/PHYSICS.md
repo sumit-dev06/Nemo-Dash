@@ -68,3 +68,35 @@ default arcade gravity/friction.
 - No backdrop-blur on touch GPUs (flat fills, same look); angler glow is a pre-rendered
   sprite; all body gradients memoized (`grad()` — no per-frame allocation churn).
 - Fin flaps are pure sine + tiny fills: immeasurable cost, verified no regression.
+## 8. v3.0 — velocity-driven animals (hunters, jellies, fry)
+The predators/jellies left the position-driven model for a real two-axis one. Every
+hazard now owns `vy` and derives its drawn body angle from it, so a fish that climbs is
+nose-up instead of gliding sideways perfectly level.
+
+```
+FOE_VY_MAX = 205 px/s            // measured ceiling of the old model, kept as the cap
+kFoe = 1 - exp(-6 * dt)          // one shared exp per frame, used by every entity
+wantVy: each state writes its target vertical speed (hunter steer, wobble, lunge)
+vy += (wantVy - vy) * kFoe       // smooth approach — nothing snaps vertically
+vy  = clamp(vy, -FOE_VY_MAX, FOE_VY_MAX)
+y  += vy * dt * slowM
+pitch += (clamp(atan2(vy, fwd)*0.72, -0.6, 0.6) - pitch) * kFoe
+```
+
+The visible body angle is `atan2(vy, |vx|)` (clamped, scaled 0.72) — the faster the dive
+or climb, the steeper the fish sits, and it eases back to level on the straight. Hunters
+never swim backwards: the curve that would have produced a rightward `vx` is discarded.
+
+**Jellies pulse-propulse.** A bell contraction (`s > 0.6`) fires one `vy -= thrust`
+impulse (52–74), then negative buoyancy (+26·dt), station-keeping toward `y0`
+(`(y0-y)*0.6*dt` — keeps the authored wave doors open), and an exponential damp
+(`dampJ = exp(-2.2·dt)`). So a jelly *drifts* around its depth in pulses rather than
+gliding in a straight line.
+
+**Fry school + scatter.** `want = (sy + oy - y)*3.2 + s*30` holds formation with a
+wiggle; within ~122 px of Nemo they add a ±210 px/s flee and +40 px/s downstream so a
+school *parts* around you. All clamped to the swim band.
+
+Cost note: this is NET-cheaper than what it replaced — the renderer now calls
+`Math.exp` twice per frame total (not once per entity) and jelly tentacles render in one
+path stroke, five `beginPath`/`stroke` calls removed.

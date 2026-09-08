@@ -1,13 +1,9 @@
 // ---------- flow ----------
 let engulfT = 0;
-function startLevel(n) {
-  try {
-    AudioSys.stopEndStings();
-  } catch (e) {}
-  level = clamp(Math.round(n) || 1, 1, MAX_LEVEL);
-  endless = false;
-  rememberRun(level, false);
-  cfg = levelConfig(level);
+// Shared run reset. startLevel() and startEndless() used to carry two
+// near-identical 40-line copies of this; anything added to one (the Spawn
+// Director, a new powerup timer) had to be remembered in the other.
+function resetRun(spawnTimers) {
   score = 0;
   pearls = 0;
   nearCount = 0;
@@ -29,15 +25,19 @@ function startLevel(n) {
   floaters = [];
   currents = [];
   fries = [];
-  spawnT = {
-    pred: cfg.first,
-    jelly: 2.0,
-    net: 2.6,
-    hook: 3.4,
-    pearl: 0.4,
-    power: 6,
-    fry: 0.8,
-  };
+  boulders = [];
+  urchins = [];
+  spawnT = spawnTimers;
+  // seabed boulders are terrain, so their cadence is measured in METRES of reef, not
+  // seconds — the first one is set here rather than by the callers.
+  if (spawnT && spawnT.rock == null) spawnT.rock = 2.2;
+  if (spawnT && spawnT.urch == null) spawnT.urch = 4;
+  if (typeof Director !== 'undefined') Director.reset();
+  // no boss carries over between runs, and the score drops out of boss mode
+  if (typeof Boss !== 'undefined') Boss.clear();
+  try {
+    AudioSys.musicBoss(false);
+  } catch (e) {}
   player.maxHearts = fish().hp;
   player.hearts = fish().hp;
   player.r = Math.round(15 * fish().size) + 2;
@@ -60,9 +60,21 @@ function startLevel(n) {
   player.feedT = 0;
   player.snapDone = false;
   player.gulpT = 0;
+  player.heartT = 0;
   midMagnet = false;
   midHeart = false;
-  player.heartT = 0;
+  // never start a run with the stick still held from the menu tap
+  input.joyTX = 0;
+  input.joyTY = 0;
+  input.joyX = 0;
+  input.joyY = 0;
+  input.pointerActive = false;
+  if (typeof window.joyReset === 'function') window.joyReset();
+  // this reef belongs to a biome: pick its palette BEFORE the decor and the water
+  // bake, so the seaweed hue, rock tint, sand and god-ray strength all agree
+  if (typeof setActiveBiome === 'function') {
+    try { setActiveBiome(endless ? distance : level); } catch (e) { setActiveBiome(level); }
+  }
   seedDecor();
   if (typeof bakeBackground !== 'undefined') bakeBackground(); // cave darkness is baked
   shake = 0;
@@ -70,14 +82,42 @@ function startLevel(n) {
   state = 'playing';
   showHud(true);
   hideAllOverlays();
+}
+function startLevel(n) {
+  try {
+    AudioSys.stopEndStings();
+  } catch (e) {}
+  level = clamp(Math.round(n) || 1, 1, MAX_LEVEL);
+  endless = false;
+  rememberRun(level, false);
+  cfg = levelConfig(level);
+  resetRun({
+    pred: cfg.first,
+    jelly: 2.0,
+    net: 3.2,
+    hook: 3.4,
+    pearl: 0.4,
+    power: 6,
+    fry: 0.8,
+  });
   document.getElementById('hint').style.display = 'block';
   setTimeout(() => {
     const h = document.getElementById('hint');
     if (h) h.style.display = 'none';
   }, 6000);
+  // the biome's name rides on the sub-line so each reef announces its palette:
+  // 'LEVEL 7 — Storm Surface · Shipwreck Graveyard' reads as a destination, not
+  // just another number. The FIRST reef of a biome is its "story card": the
+  // title swaps to the place's one-line lore instead of a generic tagline, so
+  // the descent reads as a story with chapters, not 15 identical swims.
+  const firstOfBiome = level === 1 || biomeAt(level) !== biomeAt(level - 1);
   banner(
-    'LEVEL ' + level + ' — ' + cfg.name,
-    level === 1 ? 'REACH THE CORAL GATE 🏁' : level === 11 ? 'INTO THE DARK 🕳️' : pickFlavor(),
+    'LEVEL ' + level + ' — ' + cfg.name + ' · ' + biomeName(level),
+    firstOfBiome
+      ? (BIOMES[biomeAt(level)] || {}).desc || pickFlavor()
+      : level === 11
+        ? 'INTO THE DARK 🕳️'
+        : pickFlavor(),
   );
   updateHud();
 }
@@ -89,60 +129,7 @@ function startEndless() {
   level = MAX_LEVEL;
   rememberRun(0, true);
   cfg = endlessCfg(0);
-  score = 0;
-  pearls = 0;
-  nearCount = 0;
-  combo = 0;
-  comboTimer = 0;
-  eaten = 0;
-  eatenPts = 0;
-  distance = 0;
-  scrollX = 0;
-  elapsed = 0;
-  predators = [];
-  jellies = [];
-  nets = [];
-  hooks = [];
-  pearlsArr = [];
-  powers = [];
-  parts = [];
-  bubbles = [];
-  floaters = [];
-  currents = [];
-  fries = [];
-  spawnT = { pred: 1.5, jelly: 3.0, net: 3.5, hook: 4.0, pearl: 0.4, power: 6, fry: 0.8 };
-  player.maxHearts = fish().hp;
-  player.hearts = fish().hp;
-  player.r = Math.round(15 * fish().size) + 2;
-  player.boost = 100;
-  player.boosting = false;
-  player.boostToggle = false;
-  player.trappedIn = null;
-  player.x = 170;
-  player.y = H / 2;
-  player.vy = 0;
-  player.invuln = 0;
-  player.shield = 0;
-  player.magnet = 0;
-  player.slow = 0;
-  player.alive = true;
-  player.dead = false;
-  player.deathT = 0;
-  player.deadReason = '';
-  player.eatenBy = null;
-  player.feedT = 0;
-  player.snapDone = false;
-  player.gulpT = 0;
-  midMagnet = false;
-  midHeart = false;
-  player.heartT = 0;
-  seedDecor();
-  if (typeof bakeBackground !== 'undefined') bakeBackground();
-  shake = 0;
-  slowmo = 0;
-  state = 'playing';
-  showHud(true);
-  hideAllOverlays();
+  resetRun({ pred: 1.5, jelly: 3.0, net: 4.5, hook: 4.0, pearl: 0.4, power: 6, fry: 0.8 });
   banner('ENDLESS REEF', 'HOW FAR CAN YOU SWIM? 🌊');
   updateHud();
 }
@@ -173,6 +160,7 @@ function banner(sub, title) {
 }
 function levelComplete() {
   state = 'levelComplete';
+  AudioSys.musicDuck(3.4); // pull the score down so the win sting lands in clear air
   AudioSys.win();
   showHud(false);
   best = Math.max(best, score);
@@ -300,6 +288,9 @@ function triggerDeath(reason) {
   player.boosting = false;
   player.boostToggle = false;
   player.deathT = reason === 'bite' ? 1.5 : 1.2;
+  // duck the music through the death cinematic: the sting, the roar and the blood
+  // read far better against near-silence than against a bassline still driving.
+  AudioSys.musicDuck(reason === 'bite' ? 3.6 : 2.6);
   shake = Math.max(shake, reason === 'bite' ? 18 : 12);
   flashA = 1;
   slowmo = reason === 'bite' ? 1.2 : 0.5;
@@ -369,7 +360,7 @@ function damage(reason, x, y, soft) {
     return;
   }
   if (soft) AudioSys.graze();
-  else if (reason === 'jelly') AudioSys.zap();
+  else if (reason === 'jelly' || reason === 'urch') AudioSys.zap();
   else if (reason === 'crab') AudioSys.snap();
   else AudioSys.hurt();
   burst(x || player.x, y || player.y, 30, '#ff5e62');
@@ -447,6 +438,23 @@ function updateHud() {
         : 'linear-gradient(90deg,#ff5e62,#ff2e4d)';
   }
   if (hud.boostBtn) hud.boostBtn.classList.toggle('on', !!player.boosting);
+  // boss health: only shown during a boss fight. The fight is one object, so
+  // this is a one-write-per-frame DOM touch like the other bars.
+  const bossOn = typeof Boss !== 'undefined' && Boss.active();
+  const bPill = document.getElementById('bossPill');
+  const bBar = document.getElementById('bossBar');
+  if (bPill) bPill.style.display = bossOn ? 'flex' : 'none';
+  if (bossOn) {
+    const nameEl = document.getElementById('bossName');
+    if (nameEl) nameEl.textContent = Boss.name();
+    if (bBar) {
+      const w = Math.round(Boss.frac() * 100) + '%';
+      if (bBar.__w !== w) {
+        bBar.__w = w;
+        bBar.style.width = w;
+      }
+    }
+  }
 }
 function updateCombo() {
   const el = document.getElementById('combo');

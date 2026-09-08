@@ -44,7 +44,7 @@ function fitScreen() {
   }
   if (typeof snow !== 'undefined' && Array.isArray(snow)) {
     snow.length = 0;
-    for (let i = 0; i < 90; i++)
+    for (let i = 0; i < 60; i++) // keep in step with seedDecor()
       snow.push({ x: rand(0, W), y: rand(0, H), z: rand(0.2, 1), s: rand(0.6, 2.2) });
   }
   if (typeof bakeBackground !== 'undefined') bakeBackground();

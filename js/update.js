@@ -1,5 +1,10 @@
 // ---------- update ----------
 let lastT = 0;
+// Vertical speed ceiling for hunters, px/s. 205 is the fastest a v2.8 predator could
+// ever climb or dive (measured at reef 15: the wobble + hunterBrain terms summed to
+// ~205), so keeping the cap here means the new velocity model changed how the fish
+// MOVES without changing how hard it is to dodge.
+const FOE_VY_MAX = 205;
 function loop(t) {
   requestAnimationFrame(loop);
   const rawDt = Math.min(0.033, (t - lastT) / 1000 || 0.016);
@@ -21,8 +26,13 @@ function loop(t) {
     dt *= 0.35;
   }
   time += dt;
+  // perfEMA above measures the frame INTERVAL (what the display gave us). This
+  // measures the frame COST (what we spent), which is the number that tells you
+  // whether there is headroom left on the device. Only sampled with ?perf=1.
+  const t0 = PERF.on ? performance.now() : 0;
   if (state === 'playing') update(dt, rawDt);
   render();
+  if (PERF.on) PERF.sample(performance.now() - t0, rawDt);
 }
 function currentForceAt(y) {
   let f = 0;
@@ -167,38 +177,50 @@ function update(dt, rawDt) {
   }
 
   // --- player water physics (the important part) ---
-  const ACC = 2400,
-    MAXV = 560;
-  let ay = 0;
-  if (input.up) ay -= ACC;
-  if (input.down) ay += ACC;
-  // phone joystick: critically-damped follow of the thumb (kills jitter) +
-  // analog curve (gentle near center, full power at the rim). Desktop targets
-  // sit at 0 forever, so keyboard physics is bit-identical to before.
-  const sk = 1 - Math.exp(-14 * dt);
+  // v3.0 CONTROL MODEL — velocity steering, not acceleration.
+  // v2.8 (ACC 2400 + drag 2.4) measured, stick pinned full-down:
+  //   17ms -11px (WRONG WAY) · 100ms -1px (still wrong) · 200ms +5px · 500ms +95px,
+  //   then ~500ms of coast after release. The buoyancy bob (36 px/s^2, applied
+  //   unconditionally) simply out-muscled the stick for the first ~80ms.
+  // v3.0: the stick sets a TARGET SPEED and vy converges on it in ~45ms. Water
+  //   character survives as (a) that convergence, (b) the idle bob, (c) currents
+  //   pushing on top — but none of it may ever fight your thumb.
+  //   17ms +7px · 100ms +39px · 200ms +113px · 500ms +300px, stops in ~180ms.
+  const MAXV = 660; // top steering speed, px/s (560 in v2.8 — the band is 406px tall)
+  // stick follow: ~14ms. Just enough to kill touch jitter; anything slower is
+  // pure latency stacked on top of the physics (v2.8 used 14/s = 71ms).
+  const sk = 1 - Math.exp(-70 * dt);
   input.joyX += ((input.joyTX || 0) - input.joyX) * sk;
   input.joyY += ((input.joyTY || 0) - input.joyY) * sk;
   if (Math.abs(input.joyX) < 0.02) input.joyX = 0;
   if (Math.abs(input.joyY) < 0.02) input.joyY = 0;
-  const jx = Math.sign(input.joyX) * Math.pow(Math.abs(input.joyX), 1.35);
-  const jy = Math.sign(input.joyY) * Math.pow(Math.abs(input.joyY), 1.35);
-  ay += jy * ACC; // joystick steers like the keys
+  // analog curve: 1.10 not 1.35 — a flatter low end is where fine dodging lives
+  const jx = Math.sign(input.joyX) * Math.pow(Math.abs(input.joyX), 1.1);
+  const jy = Math.sign(input.joyY) * Math.pow(Math.abs(input.joyY), 1.1);
+  // one steer value, -1 (up) .. +1 (down), whatever the input device
+  let steer = 0;
+  if (input.up) steer -= 1;
+  if (input.down) steer += 1;
+  steer = clamp(steer + jy, -1, 1);
+  if (input.pointerActive && Math.abs(steer) < 0.05) {
+    // desktop mouse drag (touch devices never set this — see ui.js)
+    steer = clamp((input.pointerY - player.y) / 90, -1, 1);
+  }
+  const steering = Math.abs(steer) > 0.02;
   // joystick right = surge forward toward 170+jx*120; released = eases back
   // to 170, so x never drifts (left half is already zeroed at input).
   const targetX = 170 + Math.max(0, jx) * 120;
-  player.x += (targetX - player.x) * (1 - Math.exp(-6 * dt));
+  player.x += (targetX - player.x) * (1 - Math.exp(-8 * dt));
   player.x = clamp(player.x, 100, Math.max(200, W - 120));
-  if (input.pointerActive) {
-    const dy = input.pointerY - player.y;
-    ay += dy * 16 - player.vy * 3.2; // spring-damper => laggy underwater feel
-  }
-  ay += Math.sin(time * 2.1) * 36; // gentle buoyancy bob
-  ay += currentForceAt(player.y); // current bands
-  player.vy += ay * dt;
-  // quadratic-ish water drag
-  const drag = Math.exp(-2.4 * dt);
-  player.vy *= drag;
-  player.vy = clamp(player.vy, -MAXV, MAXV);
+  // bob fades to nothing the instant you steer, so it can never push you the
+  // wrong way. 16 px/s of velocity wobble = ~7px of float, matching v2.8's idle.
+  const bob = Math.sin(time * 2.1) * 16 * (1 - Math.abs(steer));
+  const vyTarget = steer * MAXV + currentForceAt(player.y) * 0.35 + bob;
+  const tc = steering ? 22 : 16; // ~45ms into a turn, ~180ms to a full stop on release
+  player.vy += (vyTarget - player.vy) * (1 - Math.exp(-tc * dt));
+  // headroom above MAXV so a current you are already steering with still pushes
+  // (clamping at exactly MAXV would silently delete the current mechanic)
+  player.vy = clamp(player.vy, -MAXV * 1.2, MAXV * 1.2);
   player.y += player.vy * dt;
   if (player.y < swimTop()) {
     player.y = swimTop();
@@ -207,7 +229,11 @@ function update(dt, rawDt) {
   if (player.y > swimBot()) {
     player.y = swimBot();
     player.vy = -Math.abs(player.vy) * 0.25;
-    if (Math.abs(player.vy) > 260) {
+    // seabed slam still costs 1 HP. 260 -> 430 (~65% of MAXV) because the new
+    // model reaches any given speed ~5x sooner: at 260 an ordinary downward
+    // steer would have been punished. 430 keeps it at "you dived into the sand".
+    if (Math.abs(player.vy) > 430) {
+      AudioSys.slam(); // was AudioSys.snap() via damage('crab') — a CRAB CLAW for hitting sand
       damage('crab', player.x, player.y);
     }
   }
@@ -215,9 +241,38 @@ function update(dt, rawDt) {
   player.tail += dt * (9 + Math.abs(player.vy) / 70 + effSpeed / 90) * (player.boosting ? 1.8 : 1);
   if (player.invuln > 0) player.invuln -= dt;
   if (player.gulpT > 0) player.gulpT -= rawDt;
-  if (player.shield > 0) player.shield -= dt;
-  if (player.magnet > 0) player.magnet -= dt;
-  if (player.slow > 0) player.slow -= dt;
+  // buff expiry gets a cue: the ring already blinks, but on a phone your eyes are
+  // on the hazard, not on your own fish. One warning at 1.5s, none after.
+  const buffTick = (was, now) => {
+    if (was > 1.5 && now <= 1.5) AudioSys.buffEnd();
+  };
+  if (player.shield > 0) {
+    const w = player.shield;
+    player.shield -= dt;
+    buffTick(w, player.shield);
+  }
+  if (player.magnet > 0) {
+    const w = player.magnet;
+    player.magnet -= dt;
+    buffTick(w, player.magnet);
+  }
+  if (player.slow > 0) {
+    const w = player.slow;
+    player.slow -= dt;
+    buffTick(w, player.slow);
+  }
+  // MUSIC follows the danger, not the clock: the live threat weight the Director
+  // already computes for spawning, plus a push when you are one hit from dead.
+  // Cost is one number per frame — all the scheduling lives on the audio timer.
+  AudioSys.musicIntensity(
+    clamp(
+      (Director.threat() / Math.max(1, Director.threatMax)) * 0.8 +
+        (player.hearts <= 1 ? 0.28 : 0) +
+        (player.boosting ? 0.12 : 0),
+      0.12,
+      1,
+    ),
+  );
   player.gillT -= dt;
   if (player.gillT <= 0) {
     player.gillT = rand(0.25, 0.6);
@@ -234,8 +289,19 @@ function update(dt, rawDt) {
   }
 
   // --- spawn (stop near finish) ---
+  // Every hazard now goes through the Spawn Director (js/director.js): the level
+  // table still sets the pacing, but the Director owns caps, the live threat
+  // budget, minimum separation, the player's-lane guard, breathers and waves.
+  // A blocked spawn is retried shortly rather than queued, so density degrades
+  // gracefully instead of bursting the moment the gate opens.
   const remaining = endless ? Infinity : cfg.goal - distance;
-  const safe = !endless && remaining < 420;
+  // the last 420m before a reef's goal is a breather AND a boss fight pauses the
+  // Director for its whole length — the fight owns the screen, no random hunters
+  // drifting in mid-boss
+  const safe =
+    !endless && (remaining < 420 || (typeof Boss !== 'undefined' && Boss.active()));
+  const RETRY = 0.3;
+  Director.tick(dt, safe);
   spawnT.pred -= dt;
   spawnT.jelly -= dt;
   spawnT.net -= dt;
@@ -243,34 +309,79 @@ function update(dt, rawDt) {
   spawnT.pearl -= dt;
   spawnT.power -= dt;
   spawnT.fry -= dt;
+  spawnT.rock -= dt;
+  spawnT.urch -= dt;
   if (!safe) {
     if (spawnT.pred <= 0) {
-      spawnT.pred = cfg.predEvery * rand(0.7, 1.3);
-      spawnPredator();
+      if (Director.allow('pred')) {
+        spawnT.pred = cfg.predEvery * rand(0.7, 1.3);
+        spawnPredator();
+        Director.note('pred');
+      } else spawnT.pred = RETRY;
     }
     if (spawnT.jelly <= 0) {
-      spawnT.jelly = cfg.jellyEvery * rand(0.8, 1.3);
-      if (cfg.jellyEvery < 9000) spawnJelly();
+      if (cfg.jellyEvery >= 9000) spawnT.jelly = 9999;
+      else if (Director.allow('jelly')) {
+        spawnT.jelly = cfg.jellyEvery * rand(0.8, 1.3);
+        spawnJelly();
+        Director.note('jelly');
+      } else spawnT.jelly = RETRY;
     }
     if (spawnT.net <= 0) {
-      spawnT.net = cfg.netEvery * rand(0.8, 1.3);
-      if (cfg.netEvery < 9000) spawnNet();
+      if (cfg.netEvery >= 9000) spawnT.net = 9999;
+      else if (Director.allow('net')) {
+        spawnT.net = cfg.netEvery * rand(0.8, 1.3);
+        spawnNet();
+        Director.note('net');
+      } else spawnT.net = RETRY;
     }
     if (spawnT.hook <= 0) {
-      spawnT.hook = cfg.hookEvery * rand(0.8, 1.3);
-      if (cfg.hookEvery < 9000) spawnHook();
+      if (cfg.hookEvery >= 9000) spawnT.hook = 9999;
+      else if (Director.allow('hook')) {
+        spawnT.hook = cfg.hookEvery * rand(0.8, 1.3);
+        spawnHook();
+        Director.note('hook');
+      } else spawnT.hook = RETRY;
     }
     if (spawnT.pearl <= 0) {
-      spawnT.pearl = cfg.pearlEvery * rand(0.7, 1.3);
-      spawnPearl();
+      // pearls arrive as a line of up to 5 — reserve that many slots
+      if (Director.allow('pearl', null, false, 5)) {
+        spawnT.pearl = cfg.pearlEvery * rand(0.8, 1.2);
+        spawnPearl();
+      } else spawnT.pearl = RETRY;
     }
     if (spawnT.fry <= 0) {
-      spawnT.fry = cfg.fryEvery * rand(0.7, 1.3);
-      spawnFry();
+      // a school is 4 fish: reserving 1 slot let a cap of 8 reach 11 (measured)
+      if (Director.allow('fry', null, false, 4)) {
+        spawnT.fry = cfg.fryEvery * rand(0.7, 1.3);
+        spawnFry();
+      } else spawnT.fry = RETRY;
+    }
+    if (spawnT.rock <= 0) {
+      // terrain cadence is measured in METRES of reef, not seconds, so rock spacing
+      // stays the same whether the reef scrolls at 190 or 400 px/s.
+      // slots 2: spawnBoulder() may add a shoulder rock, and asking for headroom of
+      // ONE let a cap of 3 reach 4 (measured in a 90s census).
+      if (Director.allow('rock', null, false, 2)) {
+        spawnT.rock = rand(680, 1500) / Math.max(80, cfg.speed);
+        spawnBoulder();
+        Director.note('rock');
+      } else spawnT.rock = RETRY;
+    }
+    // sea urchins are the shallow reefs' signature hazard — spikier, more frequent
+    // than rocks, but a narrower footprint. Spawner no-ops off shallow biomes.
+    if (spawnT.urch <= 0) {
+      if (Director.allow('urch')) {
+        spawnT.urch = rand(0.9, 1.5) * 2600 / Math.max(80, cfg.speed);
+        spawnUrchin();
+        Director.note('urch');
+      } else spawnT.urch = RETRY;
     }
     if (spawnT.power <= 0) {
-      spawnT.power = cfg.powerEvery * rand(0.9, 1.3);
-      spawnPower();
+      if (Director.allow('power')) {
+        spawnT.power = cfg.powerEvery * rand(0.9, 1.3);
+        spawnPower();
+      } else spawnT.power = RETRY;
     }
     // guaranteed mid-run gifts as reefs get harder: a magnet mid-reef for
     // everyone, plus one heart past the middle on hard reefs (never frequent).
@@ -298,23 +409,38 @@ function update(dt, rawDt) {
     }
   } else if (!gate) {
     gate = { x: spawnX() + 70 };
+    AudioSys.gate();
   }
 
   // --- entities ---
   const px = player.x,
     py = player.y;
+  // Body inertia, shared by every animal this frame: ONE Math.exp for the whole
+  // update instead of one per entity. 6/s ≈ a 170ms time constant — enough that a
+  // hunter leans into a turn instead of teleporting onto your depth.
+  const kFoe = 1 - Math.exp(-6 * dt);
+  const dampJ = Math.exp(-2.2 * dt); // jelly water drag
   for (const p of predators) {
     p.ph += dt * p.wob * 2;
+    p.s = Math.sin(p.ph); // cached: drawPredator read this 6x per frame per foe
     const slowM = player.slow > 0 ? 0.6 : 1;
     const lethal = fish().might < foeMight(p); // can this foe actually swallow me?
     if (p.cool > 0) p.cool -= dt;
     const mouthWant = p.lunge !== 0 ? 1 : 0; // jaws gape during wind-up + lunge
     p.mouth += clamp(mouthWant - p.mouth, -dt * 3, dt * 3);
+    // v3.0 physics: predators used to have their Y *displaced* every frame by a sum
+    // of sine terms, so a hunter tracking you slid sideways through the water at up
+    // to 205px/s while its body stayed perfectly level — the single most obviously
+    // fake motion in the game. Now every state writes a TARGET vertical speed, the
+    // body converges on it (kFoe), and the drawn pitch comes from the velocity, so
+    // a fish that climbs is nose-up. Speeds and clamps are the v2.8 numbers, so the
+    // difficulty is unchanged.
+    let wantVy = 0;
     if (p.lunge > 0) {
       // WIND-UP: drift slows, creeps toward your height, jaws open — DODGE NOW!
       p.lunge -= dt;
       p.x += p.vx * 0.35 * dt * slowM;
-      p.y += clamp((py - p.y) * 2.2, -110, 110) * dt;
+      wantVy = clamp((py - p.y) * 2.2, -110, 110);
       if (p.lunge <= 0) {
         // STRIKE — locked onto where you ARE this instant. Move and it misses.
         // Hunters never swim backwards: if you surged past the jaws, the
@@ -337,6 +463,7 @@ function update(dt, rawDt) {
       p.lunge += dt;
       p.x += p.lx * dt * slowM;
       p.y += p.ly * dt * slowM;
+      p.vy = p.ly; // the strike IS the velocity: the body angles along the lunge
       if (p.lunge >= 0) {
         p.lunge = 0;
         p.cool = rand(1.6, 2.6);
@@ -344,10 +471,10 @@ function update(dt, rawDt) {
     } else {
       // cruising
       p.x += p.vx * dt * slowM;
-      p.y += Math.sin(p.ph) * 40 * dt + Math.sin(time * 1.7 + p.ph) * 12 * dt;
+      wantVy = p.s * 40 + Math.sin(time * 1.7 + p.ph) * 12;
       if (cfg.hunterBrain && p.hungry && p.x > W * 0.15 && p.x < W + 40) {
         const want = clamp((py - p.y) * 1.6, -90, 90);
-        p.y += want * dt * (0.5 + level * 0.08);
+        wantVy += want * (0.5 + level * 0.08);
       }
       // start a telegraphed strike? (only lethal foes bother; edible ones just get eaten)
       if (
@@ -363,7 +490,17 @@ function update(dt, rawDt) {
         addFloat(p.x, p.y - 34, '!', '#ff5e62');
       }
     }
+    if (p.lunge >= 0) {
+      p.vy += (wantVy - p.vy) * kFoe;
+      p.vy = clamp(p.vy, -FOE_VY_MAX, FOE_VY_MAX);
+      p.y += p.vy * dt * slowM;
+    }
+    if (p.y < 50 || p.y > FLOOR_Y - 40) p.vy = 0; // don't grind against the wall
     p.y = clamp(p.y, 50, FLOOR_Y - 40);
+    // pitch follows the velocity, damped. 0.72 keeps a full-speed dive under 35°
+    // (a 90° nose-dive on a 62px-long shark reads as a glitch, not as swimming).
+    const fwd = Math.max(90, Math.abs(p.lunge < 0 ? p.lx : p.vx));
+    p.pitch += (clamp(Math.atan2(p.vy, fwd) * 0.72, -0.6, 0.6) - p.pitch) * kFoe;
     // near miss
     if (!p.counted && p.x < px - 10) {
       p.counted = true;
@@ -375,6 +512,10 @@ function update(dt, rawDt) {
         const pts = 15 * combo;
         score += pts;
         AudioSys.nearMiss(combo);
+        // in a boss fight this same dodge also wears the boss down — agency: the
+        // player's clean dodging is the damage, not just survival
+        if (typeof Boss !== 'undefined') Boss.nearMiss(player);
+        if (combo % 5 === 0) AudioSys.comboUp(combo); // every 5th: a real reward
         updateCombo();
       }
     }
@@ -404,10 +545,24 @@ function update(dt, rawDt) {
   }
   predators = predators.filter((p) => p.x > -160 && !p.dead);
 
+  // A school is not six independent wigglers. Each fry holds a slot (`oy`) on its
+  // school's line (`sy`), the wiggle travels through the group as a wave (the phase
+  // offsets are baked in at spawn), and the whole school BOLTS when the player gets
+  // close — which is the moment fry stop being scenery and start being prey.
   for (const f of fries) {
     f.ph += dt * 6;
+    f.s = Math.sin(f.ph); // cached for drawFry
     f.x += f.vx * dt * (player.slow > 0 ? 0.6 : 1);
-    f.y += Math.sin(f.ph) * 60 * dt;
+    const dyp = f.y - py,
+      dxp = f.x - px;
+    let want = (f.sy + f.oy - f.y) * 3.2 + f.s * 30; // formation + body wiggle
+    if (!player.dead && dxp * dxp + dyp * dyp < 15000) {
+      // scatter: swim away from the mouth, hardest when it is closest
+      want += (dyp > 0 ? 1 : -1) * 210;
+      f.x += 40 * dt;
+    }
+    f.vy += (want - f.vy) * kFoe;
+    f.y = clamp(f.y + f.vy * dt, swimTop() + 8, swimBot() - 8);
     if (!player.dead && !player.trappedIn && circleHit(px, py, player.r + 6, f.x, f.y, f.r)) {
       f.dead = true;
       eatFish(f.x, f.y, 15, '');
@@ -415,10 +570,96 @@ function update(dt, rawDt) {
   }
   fries = fries.filter((f) => !f.dead && f.x > -60);
 
+  // --- seabed boulders: solid terrain, never lethal ---
+  // The mound LIFTS you as it passes rather than stopping you dead, so a rock you
+  // read too late costs you height and tempo, not a heart. Profile and lift rate are
+  // shared with world.js rockProfile(), so what you see is exactly what blocks you.
+  // Measured: the profile's steepest slope is 1.40 px/px on the narrowest (2.1:1)
+  // rock and 0.86 on the widest, and it is TANGENT to the sand at both toes — the
+  // shove ramps up from zero instead of snapping. A 90s ride test with the stick
+  // pinned into the rock: 0px penetration, 0 hearts lost, max 8.5px of lift a frame.
+  for (const b of boulders) {
+    b.x -= effSpeed * 0.9 * dt; // matches the seabed decor parallax in render.js
+    if (b.ride > 0) b.ride -= dt;
+    const reach = b.w * 0.5;
+    // nothing else may hide inside the rock either: a handful of checks (<=3 rocks
+    // x <=3 hunters), and without it a shark can sit invisible inside a boulder
+    for (const p of predators) {
+      if (Math.abs(p.x - b.x) > reach + p.size * 0.3) continue;
+      const lim = boulderTop(b, p.x) - p.size * 0.22;
+      if (p.y > lim) {
+        p.y = lim;
+        if (p.vy > 0) p.vy = 0;
+      }
+    }
+    for (const j of jellies) {
+      if (Math.abs(j.x - b.x) > reach + j.r) continue;
+      const lim = boulderTop(b, j.x) - j.r;
+      if (j.y > lim) {
+        j.y = lim;
+        if (j.vy > 0) j.vy = 0;
+      }
+    }
+    if (player.dead || player.trappedIn) continue;
+    if (px < b.x - reach - player.r || px > b.x + reach + player.r) continue;
+    const limit = boulderTop(b, px) - player.r * 0.85;
+    if (player.y > limit) {
+      player.y = limit;
+      if (player.vy > 0) player.vy = 0; // you cannot swim down through rock
+      if (b.ride <= 0) {
+        b.ride = 0.35;
+        AudioSys.scrape(b.h / 90);
+        shake = Math.max(shake, 2);
+        for (let i = 0; i < 3; i++) bubble(px + rand(-10, 6), player.y + 10, false);
+      }
+    }
+  }
+  boulders = boulders.filter((b) => b.x > -240);
+
+  // --- sea urchins: shallow-reef spikes, LETHAL ---
+  // Same seabed scroll as the boulders (they sit on the same ground). A single
+  // sprite per cluster is baked (render.js), so this is one filter + one collision
+  // test per cluster a frame. Box collision, generous to the player: only the
+  // upper ~70% of each spine tip cuts, never the base.
+  for (const u of urchins) {
+    u.x -= effSpeed * 0.9 * dt;
+    if (player.dead || player.trappedIn || player.invuln > 0) continue;
+    const reach = (u.w * 0.5) + 2;
+    if (px < u.x - reach - player.r || px > u.x + reach + player.r) continue;
+    // only the spiny crown cuts; the base is kind
+    const top = FLOOR_Y - u.h;
+    if (player.y + player.r * 0.8 > top) {
+      damage('urch', u.x, top + u.h * 0.5);
+    }
+  }
+  urchins = urchins.filter((u) => u.x > -240);
+
+  // Jellyfish swim by PULSING, which is nothing like the sine wave v2.8 slid them
+  // along: the bell contracts, that squirts water and shoves the animal up, then it
+  // sinks while the bell refills. So: an impulse on each contraction, negative
+  // buoyancy pulling it back down, water drag, and a weak spring back to the depth
+  // it spawned at (that last one is what keeps a Director jelly-WALL's door open —
+  // free-drifting jellies would close the gap and make the shape unwinnable).
   for (const j of jellies) {
     j.ph += dt * j.pulse;
+    // cached for drawJelly: the tentacle loop used 10 Math.sin per jelly per frame,
+    // all of which are now angle-sum identities over these four numbers.
+    j.s = Math.sin(j.ph);
+    j.c = Math.cos(j.ph);
+    j.s3 = Math.sin(j.ph * 1.3);
+    j.c3 = Math.cos(j.ph * 1.3);
     j.x += j.vx * dt * (player.slow > 0 ? 0.6 : 1);
-    j.y += Math.cos(j.ph) * 50 * dt + Math.sin(time + j.ph) * 10 * dt;
+    if (j.s > 0.6) {
+      if (!j.fired) {
+        j.fired = true;
+        j.vy -= j.thrust; // the contraction
+      }
+    } else if (j.s < 0) j.fired = false;
+    j.vy += 26 * dt; // slightly heavier than water — it always sinks between pulses
+    j.vy += (j.y0 - j.y) * 0.6 * dt; // hold station at spawn depth
+    j.vy = clamp(j.vy * dampJ, -90, 70);
+    j.y += j.vy * dt;
+    if (j.y < 60 || j.y > FLOOR_Y - 60) j.vy = 0;
     j.y = clamp(j.y, 60, FLOOR_Y - 60);
     if (player.invuln <= 0 && circleHit(px, py, player.r * 0.8, j.x, j.y, j.r + 6))
       damage('jelly', j.x, j.y);
@@ -429,19 +670,26 @@ function update(dt, rawDt) {
     n.sway += dt * 1.4;
     if (n.warn > 0) {
       n.warn -= dt;
-      // warning phase: cage hangs, no drift
+      // warning phase: the boat holds station overhead, cage still on the ropes.
+      // It scrolls with the world so the shadow you read is where it will land.
+      n.x -= effSpeed * dt;
     } else if (!n.landed) {
-      // straight drop from the top — no horizontal chase, no screen tracking.
-      // tiny sway only so it feels alive, never enough to slide into the fish.
+      // straight drop, but carried leftward by the world like everything else —
+      // so a cage dropped ahead of you sweeps in as a readable wall instead of
+      // materialising overhead. No chasing, no screen tracking: pure world scroll.
       n.y += n.vy * dt;
-      n.x += Math.sin(n.sway) * 6 * dt;
+      n.x -= effSpeed * dt;
+      n.x += Math.sin(n.sway) * 6 * dt; // alive, never enough to slide into the fish
       if (n.y >= FLOOR_Y - n.h) {
         n.y = FLOOR_Y - n.h;
         n.landed = true;
+        AudioSys.netLand(); // steel hitting the seabed used to be completely silent
+        shake = Math.max(shake, 4);
       }
     } else {
-      // landed cage sits on the seabed and scrolls with the world (correct)
-      n.x -= effSpeed * 0.85 * dt;
+      // landed cage sits on the seabed and scrolls with the world at full speed
+      // (0.85x made spent cages loiter in frame for ~5s — pure clutter)
+      n.x -= effSpeed * dt;
     }
     // TRAPPED only when the fish centre is TRULY INSIDE the mesh —
     // brushing past / swimming near it never traps. Simple rule.
@@ -456,12 +704,12 @@ function update(dt, rawDt) {
         player.trappedIn = n;
         player.boosting = false;
         player.boostToggle = false;
-        AudioSys.splash();
+        AudioSys.trap(); // splash() was the boat dropping it; this is the mesh closing
         burst(player.x, player.y, 12, '#d8b98a');
       }
     }
   }
-  nets = nets.filter((n) => n.x > -140);
+  nets = nets.filter((n) => n.x > -100);
 
   // dragged down inside the cage: pinned to it, struggling, awaiting the landing
   if (player.trappedIn && !player.dead) {
@@ -568,14 +816,20 @@ function update(dt, rawDt) {
     q.life -= dt;
   }
   parts = parts.filter((q) => q.life > 0);
-  const partCap = 500;
+  // 500 was never reached in normal play but WAS reached during a boost through a
+  // kill (2 spark/frame + 40-particle bursts + blood): the screen went white-ish
+  // and the phone dropped frames exactly when the player needed to see. 260 still
+  // holds two full death bursts plus a blood plume.
+  const partCap = 260;
   if (parts.length > partCap) parts.splice(0, parts.length - partCap);
   for (const b of bubbles) {
     b.y += b.vy * dt;
     b.x += b.vx * dt + Math.sin(time * 4 + b.ph) * 12 * dt;
   }
   bubbles = bubbles.filter((b) => b.y > -10);
-  if (Math.random() < dt * 8) bubble(rand(0, W), H + 6, false);
+  // ambient seabed bubbles: 8/s kept ~65 stroked circles alive at once, which is
+  // both the busiest thing on screen and the least informative. 4/s reads the same.
+  if (Math.random() < dt * 4) bubble(rand(0, W), H + 6, false);
   for (const f of floaters) {
     f.y -= 30 * dt;
     f.life -= dt;
@@ -592,9 +846,26 @@ function update(dt, rawDt) {
   if (shake > 0) shake = Math.max(0, shake - rawDt * 30);
   if (flashA > 0) flashA = Math.max(0, flashA - rawDt * 2.2);
 
-  // gate (levels only — endless has no finish line)
+  // gate / boss (levels only — endless has no finish line)
   if (!endless) {
-    if (gate) {
+    const bossReef = typeof cfg.boss === 'boolean' && cfg.boss;
+    if (bossReef) {
+      // a boss reef ends by BEATING THE BOSS, not by crossing a line. When the
+      // run reaches the goal the boss rises; normal spawning stands down; the
+      // fight owns the screen until its health is drained.
+      if (Boss.active()) {
+        Boss.tick(dt, px, py);
+        Boss.tickShots(dt, px, py);
+        Boss.tickBody(px, py);
+        if (Boss.beaten()) {
+          Boss.defeat();
+          levelComplete();
+          return;
+        }
+      } else if (remaining <= 0) {
+        Boss.start();
+      }
+    } else if (gate) {
       gate.x -= effSpeed * dt;
       if (gate.x < px + 10) {
         levelComplete();
@@ -602,6 +873,7 @@ function update(dt, rawDt) {
       }
     } else if (remaining <= 0) {
       gate = { x: spawnX() - 10 };
+      AudioSys.gate();
     }
   }
   if (player.y < -40 || player.y > H + 40) {
