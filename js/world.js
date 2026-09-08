@@ -405,6 +405,7 @@ function bubble(x, y, big) {
 function eatFish(x, y, pts, label) {
   eaten++;
   eatenPts += pts;
+  try { misAdd('eat', 1); } catch (e) {}
   AudioSys.gulp();
   try {
     player.gulpT = 0.32;

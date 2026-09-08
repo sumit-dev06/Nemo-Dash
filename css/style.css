@@ -216,6 +216,26 @@ canvas {
   justify-content: center;
   backdrop-filter: blur(10px);
 }
+#abilityBtn.ready {
+  border-color: rgba(255, 214, 110, 0.8);
+  box-shadow: 0 0 12px rgba(255, 214, 110, 0.7);
+}
+#abilityBtn.active {
+  background: rgba(255, 214, 110, 0.85);
+  color: #08283f;
+}
+.menu-sub {
+  font-size: 12px;
+  opacity: 0.8;
+  margin: 8px 2px;
+}
+#upgGrid {
+  display: grid;
+  gap: 8px;
+}
+#upgGrid .lvCard em button {
+  pointer-events: auto;
+}
 .overlay {
   position: absolute;
   inset: 0;

@@ -269,6 +269,15 @@ const AudioSys = {
   boostEmpty() {
     if (!this.playFile('empty', 0.8)) this.tone(320, 0.16, 'sine', 0.2, 140);
   },
+  ability() {
+    this.tone(523, 0.14, 'triangle', 0.2);
+    this.tone(784, 0.2, 'triangle', 0.2, null, 0.09);
+    this.noiseBurst(0.2, 1800, 0.15, 0.02);
+  },
+  buy() {
+    this.tone(880, 0.1, 'sine', 0.16);
+    this.tone(1320, 0.16, 'sine', 0.14, null, 0.08);
+  },
   trap() {
     if (!this.playFile('trap', 1.0, 1500)) {
       this.noiseBurst(0.2, 500, 0.45);

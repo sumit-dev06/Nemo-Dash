@@ -60,7 +60,7 @@ function update(dt, rawDt) {
     }
   } else player.boosting = false;
   if (player.boosting) {
-    player.boost = Math.max(0, player.boost - BOOST.drain * dt);
+    player.boost = Math.max(0, player.boost - (BOOST.drain / (typeof tankMul === 'function' ? tankMul() : 1)) * dt);
     if (player.boost <= 0) {
       player.boosting = false;
       player.boostToggle = false;
@@ -80,6 +80,8 @@ function update(dt, rawDt) {
   } else player.boost = Math.min(100, player.boost + BOOST.fill * dt);
   const effSpeed =
     cfg.speed *
+    (typeof finMul === 'function' ? finMul() : 1) *
+    (player.frenzy > 0 ? 1.25 : 1) *
     (player.slow > 0 ? 0.62 : 1) *
     (player.magnet > 0 ? 1.05 : 1) *
     (player.boosting ? BOOST.mul : 1);
@@ -186,7 +188,7 @@ function update(dt, rawDt) {
   //   character survives as (a) that convergence, (b) the idle bob, (c) currents
   //   pushing on top — but none of it may ever fight your thumb.
   //   17ms +7px · 100ms +39px · 200ms +113px · 500ms +300px, stops in ~180ms.
-  const MAXV = 660; // top steering speed, px/s (560 in v2.8 — the band is 406px tall)
+  const MAXV = 660 * (typeof finMul === 'function' ? finMul() : 1); // top steering speed (+fins)
   // stick follow: ~14ms. Just enough to kill touch jitter; anything slower is
   // pure latency stacked on top of the physics (v2.8 used 14/s = 71ms).
   const sk = 1 - Math.exp(-70 * dt);
@@ -241,6 +243,8 @@ function update(dt, rawDt) {
   player.tail += dt * (9 + Math.abs(player.vy) / 70 + effSpeed / 90) * (player.boosting ? 1.8 : 1);
   if (player.invuln > 0) player.invuln -= dt;
   if (player.gulpT > 0) player.gulpT -= rawDt;
+  try { Meta.tickAbility(dt); Meta.tick(); } catch (e) {}
+  try { misAdd('dist', effSpeed * dt); } catch (e) {}
   // buff expiry gets a cue: the ring already blinks, but on a phone your eyes are
   // on the hazard, not on your own fish. One warning at 1.5s, none after.
   const buffTick = (was, now) => {
@@ -507,6 +511,7 @@ function update(dt, rawDt) {
       const gap = Math.abs(p.y - py);
       if (gap < 86) {
         nearCount++;
+        try { misAdd('near', 1); } catch (e) {}
         combo++;
         comboTimer = 2.5;
         const pts = 15 * combo;
@@ -533,8 +538,12 @@ function update(dt, rawDt) {
       const touchBody =
         !touchMouth && circleHit(px, py, player.r * 0.85, p.x + p.size * 0.1, p.y, rr * 1.05);
       if (touchMouth || touchBody) {
-        // bigger fish eat smaller ones: might decides who swallows whom
-        if (fish().might >= foeMight(p)) {
+        // thorns (Puffy guard) + frenzy (Razor): contact becomes YOUR kill
+        if ((player.thorns > 0 || player.frenzy > 0) && fish().might + 0.6 >= foeMight(p)) {
+          p.dead = true;
+          p.counted = true;
+          eatFish(p.x, p.y, 50, '');
+        } else if (fish().might >= foeMight(p)) {
           p.dead = true;
           p.counted = true;
           eatFish(p.x, p.y, 50, '');
@@ -778,7 +787,7 @@ function update(dt, rawDt) {
         addFloat(px, py - 34, 'Shield! 🛡️', '#7de9ff');
       }
       if (pw.kind === 'magnet') {
-        player.magnet = 10;
+        player.magnet = 10 * (typeof lureMul === 'function' ? lureMul() : 1);
         addFloat(px, py - 34, 'Magnet! 🧲', '#ff9ff3');
       }
       if (pw.kind === 'slow') {

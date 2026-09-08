@@ -1,5 +1,5 @@
 /* Nemo Dash service worker — offline-first cache. Bump on release. */
-const CACHE = 'nemo-dash-v3.1';
+const CACHE = 'nemo-dash-v3.2';
 const ASSETS = [
   './',
   './index.html',
@@ -18,6 +18,7 @@ const ASSETS = [
   './js/update.js',
   './js/render.js',
   './js/ui.js',
+  './js/meta.js',
   './assets/logo.svg',
   './assets/favicon.svg',
   './assets/favicon-32x32.png',

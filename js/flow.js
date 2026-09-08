@@ -38,8 +38,8 @@ function resetRun(spawnTimers) {
   try {
     AudioSys.musicBoss(false);
   } catch (e) {}
-  player.maxHearts = fish().hp;
-  player.hearts = fish().hp;
+  player.maxHearts = fish().hp + (typeof hullBonus === 'function' ? hullBonus() : 0);
+  player.hearts = player.maxHearts;
   player.r = Math.round(15 * fish().size) + 2;
   player.boost = 100;
   player.boosting = false;
@@ -61,6 +61,10 @@ function resetRun(spawnTimers) {
   player.snapDone = false;
   player.gulpT = 0;
   player.heartT = 0;
+  player.abilityCd = 0;
+  player.abilityT = 0;
+  player.frenzy = 0;
+  player.thorns = 0;
   midMagnet = false;
   midHeart = false;
   // never start a run with the stick still held from the menu tap
@@ -205,6 +209,7 @@ function levelComplete() {
   show('levelDone');
   confetti();
   updateHud();
+  try { recordDaily(); } catch (e) {}
 }
 function gameOver(reason, quiet) {
   if (state !== 'playing') return;
@@ -265,6 +270,7 @@ function gameOver(reason, quiet) {
   };
   document.getElementById('overTitle').textContent = titleByReason[reason] || 'Nemo got nibbled!';
   show('gameOver');
+  try { recordDaily(); } catch (e) {}
 }
 // Shield absorbs one hit of ANY kind (bite, cage, hazard). Returns true if it saved you.
 function useShield() {
